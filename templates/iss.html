@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ISS Magnetosphere Run — v2</title>
+<audio id="ambientMusic" loop preload="auto">
+  <source src="{{ url_for('static', filename='resources/7209705636580936453.mp3') }}" type="audio/mpeg">
+</audio>
+<audio id="voiceRecording1" preload="auto">
+  <source src="{{ url_for('static', filename='resources/1.mp3') }}" type="audio/mpeg">
+</audio>
+<audio id="voiceRecording2" preload="auto">
+  <source src="{{ url_for('static', filename='resources/2.mp3') }}" type="audio/mpeg">
+</audio>
+<audio id="voiceRecording3" preload="auto">
+  <source src="{{ url_for('static', filename='resources/3.mp3') }}" type="audio/mpeg">
+</audio>
+<audio id="voiceRecording4" preload="auto">
+  <source src="{{ url_for('static', filename='resources/4.mp3') }}" type="audio/mpeg">
+</audio>
+<style>
+  html, body { height: 100%; margin: 0; background:#000; color:#e6f2ff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial; }
+  canvas { display:block; width:100vw; height:100vh; }
+</style>
+<script>
+  // Tutorial System
+  let tutorialStep = 0;
+  let tutorialActive = false;
+  
+  const tutorialMessages = [
+    {
+      text: "Welcome to ISS Emergency Protocol Training. You must descend to a lower orbit to hide within Earth's protective magnetic field before the solar storm arrives.",
+      position: "center"
+    },
+    {
+      text: "You need to catch comets to use their ice contents for fuel production and orbital deceleration. Watch for the white comets approaching your orbit.",
+      position: "top",
+      highlightComets: true
+    },
+    {
+      text: "Use LEFT and RIGHT arrow keys to move the ISS along its orbital path. Time your movements to intercept the comets. Ready to begin?",
+      position: "center"
+    }
+  ];
+  
+  function startTutorial() {
+    introScreen.style.display = 'none';
+    tutorialStep = 0;
+    tutorialActive = true;
+    showTutorialStep();
+  }
+  
+  function startGame() {
+    tutorialOverlay.style.display = 'none';
+    tutorialActive = false;
+    gameStarted = true;
+    reset();
+  }
+  
+  function showTutorialStep() {
+    if (tutorialStep >= tutorialMessages.length) {
+      startGame();
+      return;
+    }
+    
+    const message = tutorialMessages[tutorialStep];
+    tutorialOverlay.style.display = 'block';
+    
+    // Position the tutorial box
+    tutorialBox.className = `tutorialBox ${message.position}`;
+    
+    // Type out the message
+    tutorialText.textContent = '';
+    tutorialBtn.style.display = 'none';
+    
+    let currentIndex = 0;
+    const typeSpeed = 40;
+    
+    function typeNextCharacter() {
+      if (currentIndex < message.text.length) {
+        tutorialText.textContent += message.text[currentIndex];
+        currentIndex++;
+        setTimeout(typeNextCharacter, typeSpeed);
+      } else {
+        // Typing complete
+        tutorialBtn.style.display = 'block';
+        
+        // Highlight comets if needed
+        if (message.highlightComets) {
+          spawnTutorialComets();
+        }
+      }
+    }
+    
+    typeNextCharacter();
+  }
+  
+  function nextTutorialStep() {
+    // Remove comet highlights
+    clearCometHighlights();
+    tutorialStep++;
+    showTutorialStep();
+  }
+  
+  function spawnTutorialComets() {
+    // Add some tutorial comets to demonstrate
+    for (let i = 0; i < 3; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = START_R * 1.2;
+      objects.push({
+        type: 'comet',
+        x: CX + Math.cos(angle) * distance,
+        y: CY + Math.sin(angle) * distance,
+        vx: -Math.cos(angle) * 120 * DPR,
+        vy: -Math.sin(angle) * 120 * DPR,
+        r: 8 * DPR,
+        highlight: true
+      });
+    }
+  }
+  
+  function clearCometHighlights() {
+    objects = objects.filter(obj => !obj.highlight);
+  }
+</script>
+<style>
+  #ui { position: fixed; inset: 0; pointer-events: none; }
+  .hud { position: absolute; left: 50%; transform: translateX(-50%); top: 12px; display: flex; gap: 16px; align-items: center; font-weight: 600; background: rgba(0,0,0,.35); padding: 8px 12px; border-radius: 12px; backdrop-filter: blur(6px); }
+  .chip { padding: 4px 8px; border-radius: 999px; background: rgba(255,255,255,.08); font-variant-numeric: tabular-nums; }
+
+
+  .center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .card { text-align: center; background: rgba(0,0,0,.6); padding: 18px 22px; border-radius: 16px; border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(8px); }
+  .card h1 { margin: 0 0 8px 0; font-size: 28px; letter-spacing: .5px; }
+  .card p { margin: 0; opacity: .9; }
+  .btnbar { margin-top: 12px; display:flex; gap:10px; justify-content:center; }
+  .btn { pointer-events: auto; background:#0d2b42; color:#e6f2ff; border:1px solid #1d4c72; padding:8px 12px; border-radius:10px; cursor:pointer; }
+  .safeTag { position: absolute; left: 12px; top: 12px; padding: 6px 10px; border-radius: 10px; background: rgba(0,255,140,.12); color:#aaffdf; border:1px solid rgba(0,255,140,.35); display:none; }
+  
+  .gameTip {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 8px;
+    color: #b8e0ff;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    pointer-events: none;
+  }
+  
+  /* Educational Introduction Screen */
+  .introScreen {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: auto;
+  }
+  
+  .introContent {
+    max-width: 700px;
+    padding: 40px;
+    background: linear-gradient(135deg, rgba(10,20,40,0.6), rgba(20,30,50,0.6));
+    border: 2px solid rgba(0,170,255,0.8);
+    border-radius: 12px;
+    box-shadow: 0 0 40px rgba(0,170,255,0.3);
+    text-align: center;
+    backdrop-filter: blur(5px);
+  }
+  
+  .solarStormGif {
+    margin-bottom: 25px;
+  }
+  
+  .stormAnimation {
+    width: 200px;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(255,100,0,0.4);
+    animation: stormGlow 3s ease-in-out infinite alternate;
+  }
+  
+  @keyframes stormGlow {
+    0% { 
+      box-shadow: 0 0 20px rgba(255,100,0,0.4);
+      filter: brightness(1);
+    }
+    100% { 
+      box-shadow: 0 0 30px rgba(255,150,0,0.6);
+      filter: brightness(1.1);
+    }
+  }
+  
+  .introHeader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+  
+  .satelliteIcon {
+    width: 72px;
+    height: 72px;
+    filter: brightness(1.2) contrast(1.1);
+    animation: satellitePulse 2s ease-in-out infinite;
+  }
+  
+  @keyframes satellitePulse {
+    0%, 100% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.05); opacity: 1; }
+  }
+  
+  .introContent h1 {
+    font-size: 32px;
+    color: #00ddff;
+    margin: 0;
+    text-shadow: 0 0 10px rgba(0,221,255,0.5);
+  }
+  
+  .introText {
+    font-size: 16px;
+    line-height: 1.6;
+    color: #b8e0ff;
+    margin-bottom: 30px;
+    text-align: left;
+    font-family: 'Courier New', monospace;
+    min-height: 200px;
+  }
+  
+  .introBtn {
+    background: linear-gradient(135deg, #0066cc, #0088ff);
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    font-size: 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(0,136,255,0.4);
+    transition: all 0.3s ease;
+    pointer-events: auto;
+  }
+  
+  .introBtn:hover {
+    background: linear-gradient(135deg, #0088ff, #00aaff);
+    box-shadow: 0 0 30px rgba(0,170,255,0.6);
+    transform: translateY(-2px);
+  }
+  
+  /* Tutorial Overlay */
+  .tutorialOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    backdrop-filter: blur(5px);
+    z-index: 500;
+    pointer-events: auto;
+    display: none;
+  }
+  
+  .tutorialBox {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 600px;
+    background: linear-gradient(135deg, rgba(10,20,40,0.95), rgba(20,30,50,0.95));
+    border: 2px solid #00aaff;
+    border-radius: 8px;
+    padding: 25px;
+    color: #b8e0ff;
+    font-family: 'Courier New', monospace;
+    box-shadow: 0 0 30px rgba(0,170,255,0.4);
+  }
+  
+  .tutorialBox.center {
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  
+  .tutorialBox.top {
+    top: 80px;
+  }
+  
+  .tutorialText {
+    font-size: 16px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    min-height: 60px;
+  }
+  
+  .tutorialBtn {
+    background: linear-gradient(135deg, #0066cc, #0088ff);
+    color: white;
+    border: none;
+    padding: 12px 25px;
+    font-size: 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 0 0 15px rgba(0,136,255,0.4);
+    transition: all 0.3s ease;
+    display: none;
+  }
+  
+  .tutorialBtn:hover {
+    background: linear-gradient(135deg, #0088ff, #00aaff);
+    transform: translateY(-1px);
+  }
+  
+  /* Comet Highlighting */
+  .comet-highlight {
+    box-shadow: 0 0 20px #ffff00, 0 0 40px #ffff00, 0 0 60px #ffff00;
+    animation: pulse-glow 1.5s ease-in-out infinite;
+  }
+  
+  @keyframes pulse-glow {
+    0%, 100% { 
+      box-shadow: 0 0 20px #ffff00, 0 0 40px #ffff00; 
+    }
+    50% { 
+      box-shadow: 0 0 30px #ffff00, 0 0 60px #ffff00, 0 0 80px #ffff00; 
+    }
+  }
+  
+  /* Ground Control Communication System */
+  .groundControl {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    max-width: 600px;
+    background: linear-gradient(135deg, rgba(5,15,25,0.98), rgba(10,20,35,0.95));
+    border: 2px solid #00ffaa;
+    border-radius: 4px;
+    padding: 16px 20px;
+    color: #00ff88;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 0 25px rgba(0,255,170,0.4), 0 8px 40px rgba(0,0,0,0.8), inset 0 1px 0 rgba(0,255,170,0.2);
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+  }
+  
+  .groundControl.active {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  
+  .groundControl .header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-weight: 700;
+    color: #00ddff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(0,255,170,0.3);
+    padding-bottom: 6px;
+  }
+  
+  .groundControl .signal {
+    width: 8px;
+    height: 8px;
+    background: #00ffaa;
+    border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+    box-shadow: 0 0 8px rgba(0,255,170,0.6);
+  }
+  
+  .groundControl .message {
+    font-weight: 400;
+    color: #88ffcc;
+    position: relative;
+  }
+  
+  .groundControl .message::after {
+    content: '█';
+    color: #00ffaa;
+    animation: blink 1s infinite;
+    margin-left: 2px;
+  }
+  
+  .groundControl .message.typing::after {
+    animation: blink 0.5s infinite;
+  }
+  
+  .groundControl .message.complete::after {
+    display: none;
+  }
+  
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 8px rgba(0,255,170,0.6); }
+    50% { opacity: 0.4; transform: scale(1.3); box-shadow: 0 0 15px rgba(0,255,170,0.9); }
+  }
+  
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+  
+  /* Solar Storm Progress Bar */
+  .stormProgress {
+    position: absolute;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 400px;
+    background: rgba(0,0,0,0.8);
+    border: 1px solid #ff4400;
+    border-radius: 0;
+    padding: 12px 16px;
+    backdrop-filter: blur(6px);
+    display: none;
+  }
+  
+  .stormProgress.active { display: block; }
+  
+  .stormProgress .label {
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ff8833;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  
+  .stormBar {
+    width: 100%;
+    height: 8px;
+    background: rgba(255,68,0,0.2);
+    border: 1px solid #ff4400;
+    border-radius: 0;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  .stormBar .fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #ff4400, #ff8800, #ffaa00);
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px rgba(255,68,0,0.6);
+  }
+  
+  .stormBar .danger {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 20%;
+    height: 100%;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(255,0,0,0.3) 0px,
+      rgba(255,0,0,0.3) 4px,
+      transparent 4px,
+      transparent 8px
+    );
+    animation: scroll 1s linear infinite;
+  }
+  
+  @keyframes scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-8px); }
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- Educational Introduction Screen -->
+<div class="introScreen" id="introScreen">
+  <div class="introContent">
+    <div class="solarStormGif">
+      <img src="{{ url_for('static', filename='resources/solarstorm.gif') }}" alt="Solar Storm Animation" class="stormAnimation" />
+    </div>
+    <div class="introHeader">
+      <h1>Solar Storm Emergency</h1>
+    </div>
+    <div class="introText" id="introText"></div>
+    <button class="introBtn" id="startBtn" style="display:none;">Begin Mission</button>
+  </div>
+</div>
+
+<!-- Tutorial Overlay -->
+<div class="tutorialOverlay" id="tutorialOverlay">
+  <div class="tutorialBox center" id="tutorialBox">
+    <div class="tutorialText" id="tutorialText"></div>
+    <button class="tutorialBtn" id="tutorialBtn">Continue</button>
+  </div>
+</div>
+
+<div id="ui">
+  <div class="hud">
+    <!-- Clean HUD - information provided through Ground Control -->
+  </div>
+  
+  <div class="groundControl" id="groundControl">
+    <div class="header">
+      <div class="signal"></div>
+      <span>Ground Control</span>
+    </div>
+    <div class="message" id="controlMessage"></div>
+  </div>
+  
+  <div class="stormProgress" id="stormProgress">
+    <div class="label">Solar Storm Approach</div>
+    <div class="stormBar">
+      <div class="fill" id="stormFill"></div>
+      <div class="danger"></div>
+    </div>
+  </div>
+ 
+  <div class="safeTag" id="safeTag">Safe orbit reached</div>
+  <div class="gameTip">💡 Only catch the blue comets</div>
+  <div class="center" id="center" style="display:none">
+    <div class="card">
+      <h1 id="title">Game Over</h1>
+      <p id="subtitle">The flare engulfed the ISS. Press R to try again.</p>
+      <div class="btnbar">
+        <button class="btn" id="restartBtn">Restart (R)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* Consistent visuals. Full dipole lines both hemispheres. Comets fly-by from offscreen. Slightly zoomed-out planet. */
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  let W=0, H=0, CX=0, CY=0;
+
+  function resize() {
+    W = Math.floor(window.innerWidth * DPR);
+    H = Math.floor(window.innerHeight * DPR);
+    canvas.width = W; canvas.height = H;
+    canvas.style.width = (W/DPR)+'px'; canvas.style.height = (H/DPR)+'px';
+    CX = W/2;
+    CY = H/2 + 6*DPR;
+    // Recompute size-dependent scales
+    RE = Math.min(W, H) * 0.117;       // increased Earth size by 30%
+    SAFE_R = RE * 1.43;                // increased safe zone by 30%
+    START_R = RE * 2.6;                // increased starting orbit by 30%
+    MIN_R = RE * 1.04;
+  }
+  window.addEventListener('resize', resize);
+
+  // UI
+  const center = document.getElementById('center');
+  const title = document.getElementById('title');
+  const subtitle = document.getElementById('subtitle');
+  const restartBtn = document.getElementById('restartBtn');
+  const safeTag = document.getElementById('safeTag');
+  const groundControl = document.getElementById('groundControl');
+  const controlMessage = document.getElementById('controlMessage');
+  const stormProgress = document.getElementById('stormProgress');
+  const stormFill = document.getElementById('stormFill');
+  
+  // Educational Introduction Elements
+  const introScreen = document.getElementById('introScreen');
+  const introText = document.getElementById('introText');
+  const startBtn = document.getElementById('startBtn');
+  
+  // Tutorial Elements
+  const tutorialOverlay = document.getElementById('tutorialOverlay');
+  const tutorialBox = document.getElementById('tutorialBox');
+  const tutorialText = document.getElementById('tutorialText');
+  const tutorialBtn = document.getElementById('tutorialBtn');
+  
+  restartBtn.onclick = () => reset();
+  startBtn.onclick = () => startTutorial();
+  tutorialBtn.onclick = () => nextTutorialStep();
+
+  // Earth image loading
+  const earthImage = new Image();
+  let earthImageLoaded = false;
+  earthImage.onload = () => {
+    earthImageLoaded = true;
+  };
+  earthImage.src = '{{ url_for('static', filename='resources/earth.png') }}';
+  
+  // Sprite image loading
+  const stationImg = new Image();
+  let stationLoaded = false;
+  stationImg.onload = () => {
+    stationLoaded = true;
+  };
+  stationImg.src = '{{ url_for('static', filename='resources/station.png') }}';
+  
+  const cometImg = new Image();
+  let cometLoaded = false;
+  cometImg.onload = () => {
+    cometLoaded = true;
+  };
+  cometImg.src = '{{ url_for('static', filename='resources/comet.png') }}';
+  
+  const meteorImg = new Image();
+  let meteorLoaded = false;
+  meteorImg.onload = () => {
+    meteorLoaded = true;
+  };
+  meteorImg.src = '{{ url_for('static', filename='resources/meteor.png') }}';
+
+  // World constants
+  const kmPerPx = 50;
+  let RE = 0, SAFE_R = 0, START_R = 0, MIN_R = 0;
+  const ISS_SIZE = 14 * DPR;
+  const STAR_COUNT = 220;
+  const MAX_SPEED = 0.9;
+  const COMET_PULL = () => RE * (0.15 + Math.random()*0.08);
+  const LASER_RANGE = ISS_SIZE * 3.0; // Distance at which laser fires
+
+  // State
+  let running=true, lastFrame=performance.now(), fadeIn=1.0;
+  let gameTime=60.0, cometCount=0, orbitR=0, angle=Math.PI*0.05, angVel=0.45;
+  let targetOrbitR=0, orbitTransitionSpeed=0.02; // Smooth orbit transition variables
+  let flareState='idle', flareClock=0;
+  const flareLeadSeconds = 0.0, flareSweepSeconds = 3.2;
+
+  // Visual effects and communication
+  let screenShake = { x: 0, y: 0 };
+  let particles = [];
+  let communicationState = 'establishing';
+  let lastWarningTime = 61;
+  let gameStarted = false;
+  
+  // Red death effect when ISS is engulfed by solar flare
+  let deathEffectActive = false;
+  let deathEffectStartTime = 0;
+  let deathEffectDuration = 4.0; // seconds until restart
+  
+  // Laser defense system
+  let laserShots = []; // Array to track active laser beams
+  const LASER_DURATION = 0.3; // How long laser beam is visible
+  
+  // Win fade effect for successful mission completion
+  let winFadeActive = false;
+  let winFadeStartTime = 0;
+  let winFadeDuration = 3.0; // seconds before redirect
+  
+  // Background music system
+  let ambientMusic = null;
+  let musicStarted = false;
+  
+  // Voice recording system
+  let voiceRecording1 = null;
+  let voiceRecording2 = null;
+  let voiceRecording3 = null;
+  let voiceRecording4 = null;
+  let voiceRecording1Played = false;
+  
+  // Educational content
+  const educationalText = `Solar flares release intense streams of charged particles that can cripple spacecraft electronics. In this minigame, you must protect the station from deadly radiation by capturing blue, water-rich comets to produce hydrazine fuel. Use the fuel to lower the crew’s orbit into Earth’s magnetic field for safety—while avoiding white meteorites that can damage the ship.`;
+  
+  // Educational Introduction Functions
+  function showIntroduction() {
+    let currentIndex = 0;
+    const typeSpeed = 30;
+    
+    function typeNextCharacter() {
+      if (currentIndex < educationalText.length) {
+        introText.textContent = educationalText.substring(0, currentIndex + 1);
+        currentIndex++;
+        setTimeout(typeNextCharacter, typeSpeed);
+      } else {
+        // Typing complete, show start button
+        startBtn.style.display = 'block';
+      }
+    }
+    
+    typeNextCharacter();
+  }
+  
+  function startTutorial() {
+    // For now, just skip tutorial and go straight to game
+    introScreen.style.display = 'none';
+    gameStarted = true;
+    
+    // Start background music
+    if (!musicStarted) {
+      ambientMusic = document.getElementById('ambientMusic');
+      if (ambientMusic) {
+        ambientMusic.volume = 0.4; // Set to moderate volume
+        ambientMusic.currentTime = 0;
+        ambientMusic.play().catch(e => console.log('Audio autoplay blocked:', e));
+        musicStarted = true;
+      }
+    }
+    
+    // Initialize voice recordings
+    if (!voiceRecording1) {
+      voiceRecording1 = document.getElementById('voiceRecording1');
+      voiceRecording2 = document.getElementById('voiceRecording2');
+      voiceRecording3 = document.getElementById('voiceRecording3');
+      voiceRecording4 = document.getElementById('voiceRecording4');
+      if (voiceRecording1) voiceRecording1.volume = 0.8;
+      if (voiceRecording2) voiceRecording2.volume = 0.8;
+      if (voiceRecording3) voiceRecording3.volume = 0.8;
+      if (voiceRecording4) voiceRecording4.volume = 0.8;
+    }
+    
+    reset();
+  }
+  
+  function startGame() {
+    introScreen.style.display = 'none';
+    gameStarted = true;
+    
+    // Start background music
+    if (!musicStarted) {
+      ambientMusic = document.getElementById('ambientMusic');
+      if (ambientMusic) {
+        ambientMusic.volume = 0.4; // Set to moderate volume
+        ambientMusic.currentTime = 0;
+        ambientMusic.play().catch(e => console.log('Audio autoplay blocked:', e));
+        musicStarted = true;
+      }
+    }
+    
+    reset();
+  }
+  const warningMessages = [
+    { time: 60, message: "" },
+    { time: 40, message: "Attention, ISS crew. A powerful solar flare has been detected. An increase in radiation flux is expected in the next few hours. Descend to a lower, more protected orbit. Collect icy cometary material to obtain water and subsequently convert it into hydrazine. Hydrazine is required to lower the station’s altitude. Good luck, crew, and stay alert" },
+    { time: 20, message: "Flare approaching fast. You have 30 seconds to reach the magnetosphere safe zone." },
+    { time: 15, message: "CRITICAL: 15 seconds to impact. Emergency descent protocols in effect." },
+    { time: 5, message: "IMMINENT IMPACT! All systems to emergency power. Brace for solar radiation." }
+  ];
+
+  let keys = new Set();
+  let objects = []; // {type: 'comet'|'meteor', x,y,vx,vy,r,ttl?}
+  let starfield = [];
+  let fogParticles = [];
+
+  function initStars() {
+    starfield = [];
+    for (let i=0;i<STAR_COUNT;i++){
+      starfield.push({ x: Math.random()*W, y: Math.random()*H, a: 0.3 + Math.random()*0.7, s: Math.random()*1.6 + 0.25 });
+    }
+  }
+
+  // Initialize fog particles
+  function initFog() {
+    fogParticles = [];
+    for (let i = 0; i < 80; i++) {
+      fogParticles.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 20 * DPR,
+        vy: (Math.random() - 0.5) * 20 * DPR,
+        size: Math.random() * 60 + 20,
+        opacity: Math.random() * 0.15 + 0.05,
+        rotation: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 0.02
+      });
+    }
+  }
+
+  // Update communication system and warnings
+  function updateCommunication() {
+    // Show storm progress only after 30 seconds have passed (let players get used to the game first)
+    if (gameTime <= 30 && gameTime > 0) {
+      stormProgress.classList.add('active');
+      const stormProgress_pct = ((30 - gameTime) / 30 * 100);
+      stormFill.style.width = stormProgress_pct + '%';
+    } else {
+      stormProgress.classList.remove('active');
+    }
+
+    // Ground Control warnings at specific times
+    for (const warning of warningMessages) {
+      if (gameTime <= warning.time && lastWarningTime > warning.time) {
+        showGroundControlMessage(warning.message);
+        lastWarningTime = warning.time;
+        break;
+      }
+    }
+  }
+
+  function showGroundControlMessage(message) {
+    // Skip empty messages
+    if (!message || message.trim() === '') return;
+    
+    // Play appropriate voice recording
+    if (message.includes('Attention, ISS crew') || message.includes('Attention ISS crew')) {
+      // Play first voice recording for "Attention ISS crew" message
+      if (voiceRecording1 && !voiceRecording1Played) {
+        voiceRecording1.currentTime = 0;
+        voiceRecording1.play().catch(e => console.log('Voice recording 1 failed:', e));
+        voiceRecording1Played = true;
+        
+        // Play second recording right after first one ends
+        voiceRecording1.onended = () => {
+          if (voiceRecording2) {
+            setTimeout(() => {
+              voiceRecording2.currentTime = 0;
+              voiceRecording2.play().catch(e => console.log('Voice recording 2 failed:', e));
+            }, 500); // 500ms delay between recordings
+          }
+        };
+      }
+    } else if (message.includes('CRITICAL: 15 seconds to impact')) {
+      // Play 3.mp3 for 15 seconds warning
+      if (voiceRecording3) {
+        voiceRecording3.currentTime = 0;
+        voiceRecording3.play().catch(e => console.log('Voice recording 3 failed:', e));
+      }
+    } else if (message.includes('IMMINENT IMPACT')) {
+      // Play 4.mp3 for imminent impact warning
+      if (voiceRecording4) {
+        voiceRecording4.currentTime = 0;
+        voiceRecording4.play().catch(e => console.log('Voice recording 4 failed:', e));
+      }
+    }
+    
+    groundControl.classList.add('active');
+    controlMessage.textContent = '';
+    
+    // Typewriter effect for Ground Control messages
+    let currentIndex = 0;
+    const typeSpeed = 35; // milliseconds per character
+    
+    function typeNextCharacter() {
+      if (currentIndex < message.length) {
+        controlMessage.textContent += message[currentIndex];
+        currentIndex++;
+        setTimeout(typeNextCharacter, typeSpeed);
+      } else {
+        // Typing complete - auto-hide after delay unless critical
+        setTimeout(() => {
+          if (!message.includes('CRITICAL') && !message.includes('IMMINENT')) {
+            groundControl.classList.remove('active');
+          }
+        }, 8000);
+      }
+    }
+    
+    // Start typing
+    typeNextCharacter();
+  }
+
+  // Screen shake effect
+  function updateScreenShake(dt) {
+    const stormIntensity = Math.max(0, (60 - gameTime) / 60); // 0 to 1
+    const baseShake = stormIntensity * 2; // Max 2 pixels
+    
+    if (flareState === 'sweeping') {
+      const flareShake = (flareClock / flareSweepSeconds) * 8; // Up to 8 pixels during flare
+      screenShake.x += (Math.random() - 0.5) * (baseShake + flareShake) * DPR;
+      screenShake.y += (Math.random() - 0.5) * (baseShake + flareShake) * DPR;
+    } else if (gameTime < 30) {
+      screenShake.x += (Math.random() - 0.5) * baseShake * DPR;
+      screenShake.y += (Math.random() - 0.5) * baseShake * DPR;
+    }
+    
+    // Dampen shake
+    screenShake.x *= 0.85;
+    screenShake.y *= 0.85;
+  }
+
+  // Atmospheric particles
+  function updateAtmosphereParticles(dt) {
+    // Update fog
+    for (const fog of fogParticles) {
+      fog.x += fog.vx * dt;
+      fog.y += fog.vy * dt;
+      fog.rotation += fog.rotSpeed;
+      
+      // Wrap around screen
+      if (fog.x < -fog.size) fog.x = W + fog.size;
+      if (fog.x > W + fog.size) fog.x = -fog.size;
+      if (fog.y < -fog.size) fog.y = H + fog.size;
+      if (fog.y > H + fog.size) fog.y = -fog.size;
+    }
+    
+    // Add storm particles as flare approaches
+    if (gameTime < 30 && Math.random() < 0.3) {
+      particles.push({
+        x: Math.random() * W,
+        y: -20 * DPR,
+        vx: (Math.random() - 0.5) * 100 * DPR,
+        vy: Math.random() * 150 * DPR + 50 * DPR,
+        life: 1.0,
+        maxLife: 1.5 + Math.random(),
+        size: Math.random() * 3 + 1,
+        color: Math.random() > 0.7 ? [255, 150, 0] : [255, 80, 0]
+      });
+    }
+    
+    // Update storm particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+      
+      if (p.life <= 0 || p.y > H + 50 * DPR) {
+        particles.splice(i, 1);
+      }
+    }
+  }
+
+  function reset(){
+    running = true; fadeIn = 1.0;
+    gameTime = 60.0; cometCount = 0;
+    orbitR = START_R; targetOrbitR = START_R; angle = Math.PI*0.05; angVel = 0.42;
+    objects.length = 0; laserShots.length = 0; flareState='idle'; flareClock=0;
+    
+    // Reset visual effects and communication
+    screenShake = { x: 0, y: 0 };
+    particles.length = 0;
+    communicationState = 'establishing';
+    lastWarningTime = 61;
+    
+    // Reset death effect
+    deathEffectActive = false;
+    
+    // Ensure music continues if already started
+    if (musicStarted && ambientMusic) {
+      ambientMusic.volume = 0.4; // Reset to base volume
+    }
+    
+    // Reset UI
+    safeTag.style.display='none'; 
+    center.style.display='none';
+    groundControl.classList.remove('active');
+    stormProgress.classList.remove('active');
+    
+    // Initialize effects
+    initFog();
+    
+    // Show initial Ground Control message
+    setTimeout(() => {
+      showGroundControlMessage("Establishing communication...");
+    }, 1000);
+    
+    setTimeout(() => {
+      showGroundControlMessage("Solar flare detected. Estimated arrival: 60 seconds. Begin orbital descent immediately.");
+    }, 4000);
+  }
+
+  window.addEventListener('keydown', e => { if (e.key==='ArrowLeft'||e.key==='ArrowRight') keys.add(e.key); if (e.key.toLowerCase()==='r') reset(); });
+  window.addEventListener('keyup', e => { keys.delete(e.key); });
+
+  // Spawners: comets fly-by from offscreen edges aiming through the orbital corridor
+  function spawnComet() {
+    const edge = Math.floor(Math.random()*4);
+    let x,y;
+    if (edge===0){ x=-40*DPR; y=Math.random()*H; }
+    else if (edge===1){ x=W+40*DPR; y=Math.random()*H; }
+    else if (edge===2){ x=Math.random()*W; y=-40*DPR; }
+    else { x=Math.random()*W; y=H+40*DPR; }
+
+    // Target point near current orbit (random angle near the ISS position)
+    const targetAngle = angle + (-0.7 + Math.random()*1.4);
+    const rr = orbitR + (-RE*0.35 + Math.random()*RE*0.7);
+    const tx = CX + rr * Math.cos(targetAngle);
+    const ty = CY + rr * Math.sin(targetAngle);
+
+    const dx = tx - x, dy = ty - y;
+    const dist = Math.hypot(dx,dy) || 1;
+    const speed = 140*DPR + Math.random()*120*DPR;
+    const vx = (dx/dist) * speed;
+    const vy = (dy/dist) * speed;
+
+    objects.push({
+      type:'comet', x,y, vx,vy,
+      r: 7*DPR + Math.random()*3*DPR,
+      ttl: 10.0 // seconds until cull
+    });
+  }
+
+  function spawnMeteor() {
+    const edge = Math.floor(Math.random()*4);
+    let x,y,vx,vy;
+    const speed = 120*DPR + Math.random()*90*DPR;
+    if (edge===0){ x=-30*DPR; y=Math.random()*H; const ang=(-0.2+Math.random()*0.4); vx=speed; vy=speed*ang; }
+    else if (edge===1){ x=W+30*DPR; y=Math.random()*H; const ang=(-0.2+Math.random()*0.4); vx=-speed; vy=speed*ang; }
+    else if (edge===2){ x=Math.random()*W; y=-30*DPR; const ang=(Math.PI/2)+(-0.25+Math.random()*0.5); vx=Math.cos(ang)*speed; vy=Math.sin(ang)*speed; }
+    else { x=Math.random()*W; y=H+30*DPR; const ang=(-Math.PI/2)+(-0.25+Math.random()*0.5); vx=Math.cos(ang)*speed; vy=Math.sin(ang)*speed; }
+    objects.push({ type:'meteor', x,y,vx,vy, r: 10*DPR + Math.random()*6*DPR });
+  }
+
+  // Draw helpers
+  function pxToKm(px){ return Math.round((px * kmPerPx) / DPR); }
+  function collideCircle(x1,y1,r1,x2,y2,r2){ const dx=x1-x2, dy=y1-y2; return (dx*dx+dy*dy) <= (r1+r2)*(r1+r2); }
+
+  function drawBackground(dt){
+    ctx.save();
+    ctx.translate(screenShake.x, screenShake.y);
+    
+    ctx.fillStyle = '#000'; ctx.fillRect(-screenShake.x, -screenShake.y, W, H);
+    
+    // Stars with parallax
+    for (const s of starfield){ 
+      s.x += s.s*0.02*DPR; 
+      if (s.x>W) s.x=0; 
+      ctx.globalAlpha=s.a; 
+      ctx.fillStyle='#a3c8ff'; 
+      ctx.fillRect(s.x,s.y,2,2); 
+    }
+    
+    // Atmospheric fog
+    for (const fog of fogParticles) {
+      ctx.globalAlpha = fog.opacity;
+      ctx.fillStyle = '#445566';
+      ctx.save();
+      ctx.translate(fog.x, fog.y);
+      ctx.rotate(fog.rotation);
+      ctx.fillRect(-fog.size/2, -fog.size/2, fog.size, fog.size);
+      ctx.restore();
+    }
+    
+    // Storm particles
+    for (const p of particles) {
+      const alpha = p.life / p.maxLife;
+      ctx.globalAlpha = alpha * 0.8;
+      ctx.fillStyle = `rgb(${p.color[0]}, ${p.color[1]}, ${p.color[2]})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.globalAlpha=1;
+    ctx.restore();
+    
+    // Apply screen shake to the rest of the scene
+    ctx.save();
+    ctx.translate(screenShake.x, screenShake.y);
+
+    if (flareState==='sweeping'){
+      const prog = Math.min(1, flareClock/flareSweepSeconds);
+      const xCut = W*(1-prog);
+      const grad = ctx.createLinearGradient(xCut-220*DPR,0,xCut+60*DPR,0);
+      grad.addColorStop(0,'rgba(255,160,0,0.10)');
+      grad.addColorStop(0.6,'rgba(255,90,0,0.35)');
+      grad.addColorStop(1,'rgba(255,30,0,0.65)');
+      ctx.fillStyle = grad; ctx.fillRect(xCut-220*DPR,0,W,H);
+    }
+  }
+
+  function drawEarthAndFields(){
+    // Enhanced atmosphere glow - larger for bigger Earth
+    const g = ctx.createRadialGradient(CX, CY, RE*0.85, CX, CY, RE*1.8);
+    g.addColorStop(0, '#0a2a52'); g.addColorStop(0.6, '#0a2a52'); g.addColorStop(1, 'rgba(10,42,82,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(CX,CY,RE*1.8,0,Math.PI*2); ctx.fill();
+
+    // Earth using sprite image or fallback
+    if (earthImageLoaded) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(CX, CY, RE, 0, Math.PI*2);
+      ctx.clip();
+      
+      // Draw Earth image scaled to fit
+      const earthSize = RE * 2;
+      ctx.drawImage(earthImage, CX - RE, CY - RE, earthSize, earthSize);
+      ctx.restore();
+    } else {
+      // Fallback: Enhanced Earth sphere with better colors
+      const g2 = ctx.createRadialGradient(CX-RE*0.35, CY-RE*0.35, RE*0.2, CX, CY, RE);
+      g2.addColorStop(0, '#4a9eff'); g2.addColorStop(0.7, '#2f86d1'); g2.addColorStop(1, '#0b4f8a');
+      ctx.fillStyle=g2; ctx.beginPath(); ctx.arc(CX,CY,RE,0,Math.PI*2); ctx.fill();
+
+      // Enhanced continents
+      ctx.fillStyle = '#2d8f47'; ctx.globalAlpha=0.7;
+      ctx.beginPath(); ctx.ellipse(CX - RE*0.25, CY - RE*0.1, RE*0.45, RE*0.28, 0.3, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(CX + RE*0.2,  CY + RE*0.05, RE*0.35, RE*0.22, -0.6, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha=1;
+    }
+
+    // Safe zone shaded annulus
+    ctx.save();
+    ctx.beginPath(); ctx.arc(CX,CY,SAFE_R,0,Math.PI*2); ctx.arc(CX,CY,RE,0,Math.PI*2,true); ctx.closePath();
+    ctx.fillStyle = 'rgba(0,255,140,0.08)'; ctx.fill();
+    ctx.restore();
+
+    // Safe ring outline
+    ctx.strokeStyle='rgba(0,255,140,0.35)'; ctx.lineWidth=3*DPR; ctx.setLineDash([6*DPR,8*DPR]);
+    ctx.beginPath(); ctx.arc(CX,CY,SAFE_R,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+
+    // Enhanced dipole field lines, both hemispheres, mirrored
+    const families = [];
+    for (let L=1.2; L<=6.0; L+=0.3) families.push(L);  // More field lines, extended range
+    ctx.lineWidth = 1.4*DPR;  // Slightly thicker lines
+
+    for (const L of families){
+      const alpha = 0.15 + (6.2-L)*0.02;  // Enhanced visibility
+      const col = `rgba(120,200,255,${alpha.toFixed(3)})`;  // Brighter magnetic field
+      // Right half
+      ctx.strokeStyle = col;
+      ctx.beginPath();
+      for (let i=0;i<=220;i++){
+        const th = (i/220)*Math.PI; // 0..pi
+        const r = Math.max(RE*0.98, L * RE * Math.sin(th)*Math.sin(th));
+        const x = CX + r * Math.sin(th);
+        const y = CY - r * Math.cos(th);
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      // Left half (mirror)
+      ctx.beginPath();
+      for (let i=0;i<=220;i++){
+        const th = (i/220)*Math.PI;
+        const r = Math.max(RE*0.98, L * RE * Math.sin(th)*Math.sin(th));
+        const x = CX - r * Math.sin(th);
+        const y = CY - r * Math.cos(th);
+        if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+
+      // Subtle glow along equatorial crossing
+      ctx.globalAlpha = alpha*0.6;
+      ctx.beginPath();
+      ctx.arc(CX, CY, L*RE, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // Polar aurora hint
+    const aur = ctx.createRadialGradient(CX, CY-RE*0.95, RE*0.2, CX, CY-RE*0.95, RE*0.8);
+    aur.addColorStop(0,'rgba(120,220,255,0.15)');
+    aur.addColorStop(1,'rgba(120,220,255,0)');
+    ctx.fillStyle=aur; ctx.beginPath(); ctx.arc(CX, CY-RE*0.95, RE*0.8, 0, Math.PI*2); ctx.fill();
+    const aur2 = ctx.createRadialGradient(CX, CY+RE*0.95, RE*0.2, CX, CY+RE*0.95, RE*0.8);
+    aur2.addColorStop(0,'rgba(120,220,255,0.12)');
+    aur2.addColorStop(1,'rgba(120,220,255,0)');
+    ctx.fillStyle=aur2; ctx.beginPath(); ctx.arc(CX, CY+RE*0.95, RE*0.8, 0, Math.PI*2); ctx.fill();
+  }
+
+  function drawISS(px,py,rot){
+    ctx.save(); 
+    ctx.translate(px,py); 
+    ctx.rotate(rot);
+    
+    if (stationLoaded) {
+      const size = ISS_SIZE * 2.5; // Make sprite larger to match original ISS size
+      ctx.drawImage(stationImg, -size/2, -size/2, size, size);
+    } else {
+      // Fallback to original rectangles if image not loaded
+      ctx.fillStyle='#d6e6ff'; ctx.strokeStyle='#7aa6ff'; ctx.lineWidth=1*DPR;
+      ctx.fillRect(-ISS_SIZE*0.6, -ISS_SIZE*0.3, ISS_SIZE*1.2, ISS_SIZE*0.6);
+      ctx.fillRect(-ISS_SIZE*0.15, -ISS_SIZE*0.5, ISS_SIZE*0.3, ISS_SIZE*1.0);
+      ctx.fillStyle='#7aa6ff';
+      ctx.fillRect(-ISS_SIZE*1.9, -ISS_SIZE*0.22, ISS_SIZE*1.0, ISS_SIZE*0.44);
+      ctx.fillRect( ISS_SIZE*0.9,  -ISS_SIZE*0.22, ISS_SIZE*1.0, ISS_SIZE*0.44);
+      ctx.strokeRect(-ISS_SIZE*1.9, -ISS_SIZE*0.22, ISS_SIZE*1.0, ISS_SIZE*0.44);
+      ctx.strokeRect( ISS_SIZE*0.9,  -ISS_SIZE*0.22, ISS_SIZE*1.0, ISS_SIZE*0.44);
+    }
+    
+    ctx.restore();
+  }
+
+  function drawOrbitAndISS(){
+    ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=1.5*DPR; ctx.setLineDash([6*DPR,6*DPR]);
+    ctx.beginPath(); ctx.arc(CX,CY,orbitR,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+
+    const sx = CX + orbitR * Math.cos(angle);
+    const sy = CY + orbitR * Math.sin(angle);
+    const rot = angle + Math.PI/2;
+    drawISS(sx,sy,rot);
+
+    // Laser defense and collisions
+    for (let i=objects.length-1;i>=0;i--){
+      const o = objects[i];
+      const distance = Math.hypot(sx - o.x, sy - o.y);
+      
+      if (o.type==='comet'){
+        // Check if within laser range (but not touching)
+        if (distance <= LASER_RANGE && distance > ISS_SIZE*0.6 + o.r) {
+          // Fire laser at comet
+          console.log('Laser fired! Altitude penalty applied.');
+          laserShots.push({
+            startX: sx,
+            startY: sy,
+            endX: o.x,
+            endY: o.y,
+            startTime: performance.now(),
+            duration: LASER_DURATION * 1000
+          });
+          
+          // Remove comet and gain orbital descent (laser destroys comet for fuel)
+          objects.splice(i,1);
+          targetOrbitR = Math.max(MIN_R, targetOrbitR - RE*0.15); // Laser destruction provides fuel benefit
+          
+          // Red laser blast effect
+          ctx.save();
+          ctx.strokeStyle='rgba(255,80,80,0.8)';
+          ctx.lineWidth=3*DPR;
+          ctx.beginPath();
+          ctx.arc(sx,sy,ISS_SIZE*1.8,0,Math.PI*2);
+          ctx.stroke();
+          ctx.restore();
+          
+        }
+        // Direct collision (if laser somehow missed)
+        else if (collideCircle(sx,sy, ISS_SIZE*0.6, o.x,o.y,o.r)){
+          objects.splice(i,1);
+          cometCount++;
+          targetOrbitR = Math.max(MIN_R, targetOrbitR - COMET_PULL());
+          // feedback ring
+          ctx.save(); ctx.strokeStyle='rgba(100,255,200,0.7)'; ctx.lineWidth=2*DPR;
+          ctx.beginPath(); ctx.arc(sx,sy,ISS_SIZE*1.5,0,Math.PI*2); ctx.stroke(); ctx.restore();
+        }
+      } else {
+        // Meteors still work the same way (direct collision)
+        if (collideCircle(sx,sy, ISS_SIZE*0.6, o.x,o.y,o.r)){
+          targetOrbitR = Math.min(START_R*1.05, targetOrbitR + RE*0.18);
+          gameTime = Math.max(0, gameTime - 4.0);
+          objects.splice(i,1);
+          
+          // Meteor impact - no special effects needed
+        }
+      }
+    }
+
+    // Smooth orbit transition
+    if (Math.abs(orbitR - targetOrbitR) > 0.1) {
+      const diff = targetOrbitR - orbitR;
+      orbitR += diff * orbitTransitionSpeed;
+      
+      // Clamp to target if very close to prevent infinite oscillation
+      if (Math.abs(diff) < 1) {
+        orbitR = targetOrbitR;
+      }
+    }
+
+    // Smooth orbit transition
+    if (Math.abs(orbitR - targetOrbitR) > 0.1) {
+      const diff = targetOrbitR - orbitR;
+      orbitR += diff * orbitTransitionSpeed;
+      
+      // Clamp to target if very close to prevent infinite oscillation
+      if (Math.abs(diff) < 1) {
+        orbitR = targetOrbitR;
+      }
+    }
+
+    // UI
+    safeTag.style.display = (orbitR <= SAFE_R && running) ? 'block' : 'none';
+  }
+
+  // Draw laser beams
+  function drawLaserBeams(currentTime) {
+    // Update and draw active laser shots
+    for (let i = laserShots.length - 1; i >= 0; i--) {
+      const laser = laserShots[i];
+      const elapsed = currentTime - laser.startTime;
+      
+      if (elapsed > laser.duration) {
+        laserShots.splice(i, 1);
+        continue;
+      }
+      
+      const progress = elapsed / laser.duration;
+      const alpha = 1 - progress; // Fade out over time
+      
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      
+      // Main laser beam - bright red
+      ctx.strokeStyle = `rgba(255, 100, 100, ${alpha * 0.9})`;
+      ctx.lineWidth = 4 * DPR;
+      ctx.beginPath();
+      ctx.moveTo(laser.startX, laser.startY);
+      ctx.lineTo(laser.endX, laser.endY);
+      ctx.stroke();
+      
+      // Inner bright core
+      ctx.strokeStyle = `rgba(255, 200, 200, ${alpha * 0.7})`;
+      ctx.lineWidth = 2 * DPR;
+      ctx.beginPath();
+      ctx.moveTo(laser.startX, laser.startY);
+      ctx.lineTo(laser.endX, laser.endY);
+      ctx.stroke();
+      
+      // Explosion effect at target
+      if (progress < 0.5) {
+        const explosionRadius = (progress / 0.5) * 20 * DPR;
+        ctx.strokeStyle = `rgba(255, 150, 100, ${alpha * 0.6})`;
+        ctx.lineWidth = 2 * DPR;
+        ctx.beginPath();
+        ctx.arc(laser.endX, laser.endY, explosionRadius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      
+      ctx.restore();
+    }
+  }
+
+  function drawObjects(dt){
+    for (const o of objects){
+      o.x += o.vx * dt; o.y += o.vy * dt;
+      if (o.type==='comet'){
+        // Tail aligned to velocity
+        const tx = -o.vx * 0.025, ty = -o.vy * 0.025;
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        const grad = ctx.createLinearGradient(o.x, o.y, o.x+tx*50, o.y+ty*50);
+        grad.addColorStop(0, 'rgba(160,210,255,0.9)');
+        grad.addColorStop(1, 'rgba(160,210,255,0)');
+        ctx.strokeStyle = grad; ctx.lineWidth = 3*DPR;
+        ctx.beginPath(); ctx.moveTo(o.x,o.y); ctx.lineTo(o.x+tx*50,o.y+ty*50); ctx.stroke();
+        ctx.globalAlpha = 1;
+        
+        // Draw comet sprite
+        if (cometLoaded) {
+          const size = o.r * 2.5; // Make sprite size based on radius
+          ctx.drawImage(cometImg, o.x-size/2, o.y-size/2, size, size);
+        } else {
+          // Fallback to circle if image not loaded
+          ctx.fillStyle='#9fd1ff'; ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,Math.PI*2); ctx.fill();
+        }
+        
+        ctx.restore();
+        o.ttl -= dt;
+      } else {
+        // Draw meteor sprite
+        ctx.save();
+        
+        if (meteorLoaded) {
+          const size = o.r * 2.5; // Make sprite size based on radius
+          ctx.drawImage(meteorImg, o.x-size/2, o.y-size/2, size, size);
+        } else {
+          // Fallback to circle if image not loaded
+          ctx.fillStyle='#b9bcc1';
+          ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,Math.PI*2); ctx.fill();
+          ctx.strokeStyle='#7d828a'; ctx.lineWidth=1*DPR; ctx.stroke();
+        }
+        
+        ctx.restore();
+      }
+    }
+    // Cull
+    objects = objects.filter(o => (o.type==='comet'? o.ttl>0 : true) && o.x>-120*DPR && o.x<W+120*DPR && o.y>-120*DPR && o.y<H+120*DPR);
+  }
+
+  // Red death effect when ISS is engulfed by solar flare
+  function drawDeathEffect(t) {
+    if (!deathEffectActive) return;
+    
+    const elapsed = (performance.now() - deathEffectStartTime) / 1000;
+    const progress = Math.min(elapsed / deathEffectDuration, 1);
+    
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    
+    // Phase 1: Red plasma engulfs from right side (first 2 seconds)
+    if (elapsed < 2.0) {
+      const sweepProgress = (elapsed / 2.0);
+      const sweepWidth = W * sweepProgress * 2.5; // much longer horizontally
+      
+      // Multiple layers of red plasma with better coverage
+      for (let layer = 0; layer < 12; layer++) {
+        const layerAlpha = (1 - layer / 12) * 0.8;
+        const layerOffset = layer * 15;
+        const flickerSpeed = 0.004 + layer * 0.001;
+        
+        // Red plasma gradient extending horizontally
+        const gradient = ctx.createLinearGradient(W, 0, W - sweepWidth, H);
+        const redIntensity = Math.sin(t * flickerSpeed + layer) * 0.3 + 0.7;
+        const orangeIntensity = Math.sin(t * flickerSpeed * 1.3 + layer * 0.5) * 0.4 + 0.6;
+        
+        gradient.addColorStop(0, `rgba(255, 80, 60, ${layerAlpha * redIntensity})`);
+        gradient.addColorStop(0.3, `rgba(255, 120, 80, ${layerAlpha * orangeIntensity})`);
+        gradient.addColorStop(0.7, `rgba(220, 60, 40, ${layerAlpha * orangeIntensity * 0.8})`);
+        gradient.addColorStop(1, `rgba(180, 40, 20, ${layerAlpha * 0.3})`);
+        
+        ctx.fillStyle = gradient;
+        
+        // Draw expanding plasma wave
+        ctx.beginPath();
+        const segments = 60;
+        for (let i = 0; i <= segments; i++) {
+          const y = (i / segments) * H;
+          const plasmaProgress = i / segments;
+          
+          // Create massive flame distortions
+          const flameDistortion = Math.sin(plasmaProgress * Math.PI * 6 + t * flickerSpeed * 8 + layer) * 80;
+          const edgeDistortion = Math.sin(plasmaProgress * Math.PI * 4 + t * flickerSpeed * 5) * 40;
+          
+          const x = W - sweepWidth + flameDistortion + edgeDistortion - layerOffset;
+          
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        
+        // Complete the shape to fill screen and extend far beyond
+        ctx.lineTo(W + 200, H);
+        ctx.lineTo(W + 200, 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      // Massive red particles and energy
+      const particleCount = 80;
+      for (let i = 0; i < particleCount; i++) {
+        const particleX = W - Math.random() * (sweepWidth + 100); // extend particle area
+        const particleY = Math.random() * H;
+        
+        const particleAlpha = (Math.sin(t * 0.01 + i * 0.8) * 0.5 + 0.5) * 0.9;
+        const particleSize = Math.random() * 8 + 3;
+        
+        ctx.beginPath();
+        ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 150, 120, ${particleAlpha})`;
+        ctx.fill();
+        
+        // Large glow
+        ctx.beginPath();
+        ctx.arc(particleX, particleY, particleSize * 5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 80, 60, ${particleAlpha * 0.2})`;
+        ctx.fill();
+      }
+    }
+    
+    // Phase 2: Full red screen fade (after 0.5 seconds for smoother transition)
+    if (elapsed >= 0.5) {
+      const fadeProgress = Math.min((elapsed - 0.5) / (deathEffectDuration - 0.5), 1);
+      const alpha = fadeProgress * 1.0;  // Ensure complete opacity
+      
+      ctx.globalCompositeOperation = 'source-over';
+      
+      // Ensure complete screen coverage with padding
+      const padding = 20;
+      
+      // Deep red base layer - complete coverage
+      ctx.fillStyle = `rgba(180, 20, 10, ${alpha})`;
+      ctx.fillRect(-padding, -padding, W + padding*2, H + padding*2);
+      
+      // Bright red overlay - complete coverage
+      ctx.fillStyle = `rgba(255, 50, 30, ${alpha * 0.8})`;
+      ctx.fillRect(-padding, -padding, W + padding*2, H + padding*2);
+      
+      // Intense red flicker overlay - smoother and complete
+      const flicker = Math.sin(t * 0.025) * 0.2 + 0.6;  // Smoother flicker
+      ctx.fillStyle = `rgba(255, 80, 60, ${flicker * fadeProgress * 0.9})`;
+      ctx.fillRect(-padding, -padding, W + padding*2, H + padding*2);
+      
+      // Final white-hot flash near the end
+      if (fadeProgress > 0.75) {
+        const flashIntensity = (fadeProgress - 0.75) / 0.25;
+        ctx.fillStyle = `rgba(255, 255, 200, ${flashIntensity * 0.5})`;
+        ctx.fillRect(-padding, -padding, W + padding*2, H + padding*2);
+      }
+      
+      // Final black fade to complete darkness - starts earlier for more dramatic effect
+      if (fadeProgress > 0.6) {
+        const blackFadeProgress = (fadeProgress - 0.6) / 0.4;
+        ctx.fillStyle = `rgba(0, 0, 0, ${blackFadeProgress * 0.9})`;
+        ctx.fillRect(-padding, -padding, W + padding*2, H + padding*2);
+      }
+    }
+    
+    ctx.restore();
+  }
+
+  function updateDeathEffect(dt) {
+    if (deathEffectActive) {
+      const elapsed = (performance.now() - deathEffectStartTime) / 1000;
+      if (elapsed >= deathEffectDuration) {
+        // Auto restart game after death effect
+        beginIntro();
+      }
+    }
+  }
+  
+  // Win fade effect for successful mission completion
+  function drawWinFade(currentTime) {
+    if (!winFadeActive) return;
+    
+    const elapsed = (currentTime - winFadeStartTime) / 1000;
+    const fadeProgress = Math.min(elapsed / winFadeDuration, 1.0);
+    
+    if (fadeProgress >= 1.0) {
+      // Redirect to helicopter game
+      window.location.href = '{{ url_for('helicopter_game') }}';
+      return;
+    }
+    
+    // Smooth fade to black
+    const alpha = fadeProgress * 1.0;
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Show success message during fade
+    if (fadeProgress < 0.8) {
+      ctx.save();
+      ctx.fillStyle = `rgba(255, 255, 255, ${1.0 - fadeProgress})`;
+      ctx.font = `bold ${Math.floor(48 * DPR)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.fillText('Mission Success!', CX, CY - 60 * DPR);
+      
+      ctx.font = `${Math.floor(24 * DPR)}px Arial`;
+      ctx.fillText('Crew secured from catastrophic failure!', CX, CY);
+      ctx.fillText('Proceeding to emergency response...', CX, CY + 40 * DPR);
+      ctx.restore();
+    }
+  }
+  
+  function beginIntro() {
+    // Reset everything and start new game
+    deathEffectActive = false;
+    introScreen.style.display = 'flex';
+    center.style.display = 'none';
+    reset();
+    
+    // Reset intro text
+    const introText = document.getElementById('introText');
+    if (introText) {
+      introText.textContent = '';
+    }
+    
+    // Restart education sequence
+    gameStarted = false;
+    setTimeout(() => {
+      showIntroduction();
+    }, 100);
+  }
+
+  function updateISS(dt){
+    if (keys.has('ArrowLeft'))  angVel -= 1.5*dt;
+    if (keys.has('ArrowRight')) angVel += 1.5*dt;
+    const baseline = 0.42;
+    angVel += (baseline - angVel) * 0.25 * dt;
+    angVel = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, angVel));
+    angle += angVel * dt;
+  }
+
+  // Main
+  let spawnC=0, spawnM=0;
+  function frame(ts){
+    const now = ts || performance.now();
+    let dt = (now - lastFrame)/1000; if (dt>0.05) dt = 0.05; lastFrame = now;
+
+    // Don't run game logic until intro is complete
+    if (!gameStarted) {
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    // Update visual effects
+    updateScreenShake(dt);
+    updateAtmosphereParticles(dt);
+    updateDeathEffect(dt);
+    updateCommunication();
+    
+    // Dynamic music volume based on storm intensity and gameplay state
+    if (ambientMusic && musicStarted) {
+      let targetVolume = 0.4; // base volume
+      
+      // Increase volume during storm progression (last 30 seconds)
+      if (gameTime <= 30) {
+        const stormIntensity = (30 - gameTime) / 30; // 0 to 1 as storm approaches
+        targetVolume += stormIntensity * 0.3; // up to 0.7 total volume
+      }
+      
+      // Boost during death effect
+      if (deathEffectActive) {
+        targetVolume += 0.3; // dramatic music during death
+      }
+      
+      // Cap maximum volume and apply smoothly
+      ambientMusic.volume = Math.min(targetVolume, 0.8);
+    }
+    
+    drawBackground(dt);
+    drawEarthAndFields();
+
+    if (running){
+      spawnC += dt; spawnM += dt;
+      if (spawnC > 1.1){ spawnComet(); spawnC = 0; }
+      if (spawnM > 2.5){ spawnMeteor(); spawnM = 0; }
+
+      updateISS(dt);
+      drawOrbitAndISS();
+      drawObjects(dt);
+      
+      // Draw laser beams
+      drawLaserBeams(performance.now());
+      
+      // Draw red death effect if active
+      drawDeathEffect(performance.now());
+
+      // Timer always counts down, but progress bar only appears at 30s mark
+      gameTime -= dt; 
+      if (gameTime < 0) gameTime = 0;
+
+      if (orbitR <= SAFE_R && flareState!=='done'){
+        running=false; flareState='done'; 
+        // Start win fade effect
+        winFadeActive = true;
+        winFadeStartTime = performance.now();
+      }
+
+      if (gameTime<=0 && flareState==='idle'){ flareState='arming'; flareClock=0; }
+      if (flareState==='arming'){ flareClock+=dt; if (flareClock>=flareLeadSeconds){ flareState='sweeping'; flareClock=0; } }
+      else if (flareState==='sweeping'){ flareClock+=dt; if (flareClock>=flareSweepSeconds){
+        if (orbitR>SAFE_R){ running=false; flareState='done';
+          // Trigger death effect instead of showing game over immediately
+          deathEffectActive = true;
+          deathEffectStartTime = performance.now();
+        }
+        else { running=false; flareState='done';
+          // Start win fade effect
+          winFadeActive = true;
+          winFadeStartTime = performance.now(); }
+      } }
+    } else {
+      drawOrbitAndISS();
+      drawObjects(0);
+    }
+    
+    // Restore context after screen shake
+    ctx.restore();
+
+    if (fadeIn>0){ fadeIn=Math.max(0, fadeIn - dt*0.6); ctx.fillStyle=`rgba(0,0,0,${fadeIn.toFixed(3)})`; ctx.fillRect(0,0,W,H); }
+    
+    // Draw win fade effect on top of everything
+    drawWinFade(performance.now());
+    
+    requestAnimationFrame(frame);
+  }
+
+  // Init
+  resize(); initStars(); initFog();
+  
+  // Show educational introduction first
+  showIntroduction();
+  
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

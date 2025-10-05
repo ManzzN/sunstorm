@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Solar Storm QTE — Single File</title>
+  <audio id="ambientMusic" loop preload="auto">
+    <source src="{{ url_for('static', filename='resources/7209705636580936453.mp3') }}" type="audio/mpeg">
+  </audio>
+  <style>
+    /* --- Layout --------------------------------------------------------- */
+    :root{--sun1:#fff8e1;--sun2:#ffe082;--sun3:#ff9c2a;--ui:#0a0a0a;--ui2:#1a1a1a;--accent:#cc4400;--accent2:#ff6600;--plasma:#ff4400;--electric:#66aacc;--space-blue:#334455;--deep-blue:#223344;--ice-blue:#99aaaa}
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      background: radial-gradient(ellipse at center, #040510 0%, #01020a 100%); 
+      color: #e6e8ff; 
+      font-family: ui-rounded, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans'; 
+      overflow: hidden;
+    }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    #ui { position: fixed; inset: 0; pointer-events: none; }
+    .hidden { display: none; }
+
+    /* --- Critical banner ------------------------------------------------ */
+    .banner { 
+      position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
+      padding: 8px 16px; border: 2px solid #cc4400; color: #ffffff; letter-spacing: 0.2em;
+      background: rgba(0,0,0,0.9); 
+      text-transform: uppercase; font-weight: 700; font-size: 0.85rem;
+      text-shadow: none; 
+      backdrop-filter: none;
+      border-radius: 0; 
+      box-shadow: 
+        0 0 0 1px #663300,
+        0 2px 8px rgba(0,0,0,0.8);
+      animation: criticalPulse 2s ease-in-out infinite;
+    }
+    @keyframes criticalPulse {
+      0%, 100% { 
+        box-shadow: 
+          0 0 20px rgba(255,107,53,0.4),
+          0 10px 30px rgba(255,120,150,0.25),
+          inset 0 1px 2px rgba(255,255,255,0.2);
+      }
+      50% { 
+        box-shadow: 
+          0 0 35px rgba(255,107,53,0.7),
+          0 10px 30px rgba(255,120,150,0.4),
+          inset 0 1px 2px rgba(255,255,255,0.3);
+      }
+    }
+
+    /* --- QTE HUD -------------------------------------------------------- */
+    .qte { 
+      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+      width: min(800px, 92vw); display: grid; grid-template-columns: 1fr auto; gap: 10px;
+      align-items: center; pointer-events: none;
+      padding: 12px 16px;
+      background: rgba(0,0,0,0.95);
+      border: 1px solid #444444;
+      border-radius: 0;
+      backdrop-filter: none;
+      box-shadow: 
+        0 0 0 1px #222222,
+        0 4px 16px rgba(0,0,0,0.9);
+    }
+    .qte .prompt { 
+      grid-column: 1 / -1; text-align: center; font-weight: 600; 
+      letter-spacing: 0.05em; color: #cccccc; 
+      text-shadow: none; 
+      font-size: 1.0rem; margin-bottom: 6px;
+      animation: none;
+    }
+    @keyframes bop { 
+      0%{ transform: scale(1); filter: brightness(1);} 
+      50%{ transform: scale(1.04); filter: brightness(1.15);} 
+      100%{ transform: scale(1); filter: brightness(1);} 
+    }
+    kbd { 
+      display: inline-block; min-width: 1.8em; padding: 4px 8px; margin: 0 2px; 
+      border-radius: 0; border: 1px solid #555555; 
+      background: #222222; 
+      box-shadow: 0 2px 0 #000, 0 0 0 1px #444444; 
+      font-weight: 700; color: #ffffff;
+      text-shadow: none;
+    }
+    .bar { 
+      height: 20px; border-radius: 0; 
+      border: 1px solid #666666; 
+      background: #111111; 
+      overflow: hidden; pointer-events: auto;
+      box-shadow: 
+        inset 0 1px 2px rgba(0,0,0,0.8),
+        0 0 0 1px #333333;
+    }
+    .fill { 
+      height: 100%; width: 0%; 
+      background: #cc4400; 
+      box-shadow: 
+        0 0 8px rgba(204,68,0,0.4),
+        inset 0 1px 1px rgba(255,255,255,0.1); 
+      transition: width 70ms linear;
+      position: relative;
+    }
+    .fill::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 30px;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4));
+      animation: energyFlow 1s ease-in-out infinite;
+    }
+    @keyframes energyFlow {
+      0%, 100% { opacity: 0.3; transform: translateX(0); }
+      50% { opacity: 0.8; transform: translateX(-10px); }
+    }
+    .timer { 
+      white-space: nowrap; font-variant-numeric: tabular-nums; 
+      opacity: 0.95; font-weight: 800; font-size: 1.1rem;
+      color: var(--ice-blue); text-shadow: 0 0 10px rgba(74,144,226,0.7);
+    }
+
+    /* --- Result modal (fail only) -------------------------------------- */
+    .overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.55); backdrop-filter: blur(2px); }
+    .result { position: absolute; inset: 0; display: grid; place-items: center; }
+    .card { pointer-events: auto; background: #0f0f12; border: 1px solid #34343a; border-radius: 16px; padding: 18px 20px; min-width: 280px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+    .card h2 { margin: 6px 0 12px; font-size: 1.2rem; }
+    .row { display: flex; gap: 12px; justify-content: center; }
+    button { all: unset; cursor: pointer; padding: 10px 14px; border-radius: 12px; background: #2a2a33; border: 2px solid #fff; color: #fff; font-weight: 900; }
+    button:hover { filter: brightness(1.12); transform: translateY(-1px); }
+
+    /* --- Screen flash on fail ------------------------------------------ */
+    .flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 60%, rgba(255,0,0,0.33), rgba(255,0,0,0.0) 60%); animation: flash 320ms ease-out forwards; }
+    @keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+
+    /* --- Kid-friendly edu box ------------------------------------------ */
+    .edu { position: absolute; top: 10%; left: 50%; transform: translateX(-50%); width: min(720px, 92vw); pointer-events: auto; }
+    .edu .box { background: rgba(0,0,0,0.95); border: 1px solid #555555; border-radius: 0; padding: 12px 16px; box-shadow: 0 0 0 1px #333333, 0 8px 24px rgba(0,0,0,0.8); }
+    .edu h3 { margin: 4px 0 6px; font-size: 1.0rem; color: #ffffff; text-shadow: none; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; }
+    .edu p { margin: 0; line-height: 1.3; color: #cccccc; font-weight: 400; }
+    .edu .cta { margin-top: 8px; display: flex; gap: 8px; justify-content: flex-end; }
+    .tag { display:inline-block; background:#333333; color:#ffffff; border:1px solid #666666; border-radius:0; padding:2px 8px; font-weight:600; font-size:11px; margin-right:4px; text-transform: uppercase; }
+
+    /* --- Small tip ------------------------------------------------------ */
+    .tip { position: absolute; bottom: 8px; right: 10px; opacity: 0.7; font-size: 12px; font-weight: 700; }
+
+    /* --- Fade-in animations --------------------------------------------- */
+    .fade-in {
+      animation: fadeIn 0.8s ease-out forwards;
+    }
+    
+    .fade-in-delayed {
+      opacity: 0;
+      animation: fadeInDelayed 1.0s ease-out 5s forwards;
+    }
+    
+    @keyframes fadeIn {
+      from { 
+        opacity: 0; 
+        transform: translateX(-50%) translateY(20px) scale(0.95);
+      }
+      to { 
+        opacity: 1; 
+        transform: translateX(-50%) translateY(0) scale(1);
+      }
+    }
+    
+    @keyframes fadeInDelayed {
+      from { 
+        opacity: 0; 
+        transform: translateX(-50%) translateY(-20px) scale(0.9);
+      }
+      to { 
+        opacity: 1; 
+        transform: translateX(-50%) translateY(0) scale(1);
+      }
+    }
+    
+    /* Intro prologue textbox */
+    .intro-info {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%;
+      max-width: 520px;
+      padding: 32px 28px;
+      z-index: 9999;
+      background: rgba(15, 20, 25, 0.95);
+      border: 1px solid #404040;
+      border-radius: 2px;
+      backdrop-filter: blur(4px);
+      box-shadow: 
+        0 0 0 1px #2a2a2a,
+        0 4px 20px rgba(0, 0, 0, 0.6);
+      color: #c0c0c0;
+      text-align: center;
+      font-family: 'Courier New', 'Monaco', 'Menlo', monospace;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      opacity: 0;
+      animation: fadeIn 1.5s ease-out 1s forwards;
+    }
+    
+    .intro-info h3 {
+      margin: 0 0 20px 0;
+      color: #e0e0e0;
+      font-size: 1.0rem;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0.05em;
+      font-family: 'Courier New', 'Monaco', 'Menlo', monospace;
+    }
+    
+    .intro-info p {
+      margin: 0 0 24px 0;
+      opacity: 0.9;
+      text-align: center;
+    }
+    
+    .intro-info .skip-btn {
+      padding: 10px 24px;
+      background: rgba(60, 60, 60, 0.9);
+      border: 1px solid #606060;
+      color: #e0e0e0;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      pointer-events: auto;
+      font-family: 'Courier New', 'Monaco', 'Menlo', monospace;
+      font-size: 0.8rem;
+    }
+    
+    .intro-info .skip-btn:hover {
+      background: rgba(80, 80, 80, 0.95);
+      border-color: #808080;
+      color: #ffffff;
+    }
+    
+    /* Flight educational textboxes */
+    .flight-info {
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 600px;
+      padding: 20px 24px;
+      background: rgba(0,20,40,0.95);
+      border: 2px solid #0088ff;
+      border-radius: 8px;
+      backdrop-filter: blur(4px);
+      box-shadow: 
+        0 0 0 1px #004488,
+        0 0 25px rgba(0,136,255,0.4),
+        inset 0 0 15px rgba(0,0,0,0.6);
+      color: #b8e0ff;
+      text-align: left;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      opacity: 0;
+      animation: fadeIn 1.0s ease-out forwards;
+      pointer-events: auto;
+    }
+    
+    .flight-info h3 {
+      margin: 0 0 12px 0;
+      color: #00ccff;
+      font-size: 1.1rem;
+      font-weight: 600;
+      text-shadow: 0 0 6px rgba(0,204,255,0.6);
+    }
+    
+    .flight-info p {
+      margin: 0 0 16px 0;
+      opacity: 0.95;
+    }
+    
+    .flight-info .continue-btn {
+      padding: 8px 18px;
+      background: rgba(0,136,255,0.8);
+      border: 1px solid #0088ff;
+      color: #ffffff;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      float: right;
+    }
+    
+    .flight-info .continue-btn:hover {
+      background: rgba(0,136,255,1.0);
+      box-shadow: 0 0 12px rgba(0,136,255,0.6);
+    }
+    
+    /* Fade to black overlay */
+    .fade-to-black {
+      position: fixed;
+      inset: 0;
+      background: #000000;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 9999;
+      animation: fadeToBlack 3s ease-out forwards;
+    }
+    
+    @keyframes fadeToBlack {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="ui">
+    <div id="critical" class="banner hidden">CRITICAL LEVEL</div>
+    
+    <div id="introInfo" class="intro-info hidden">
+      <h3>DEEP SPACE OBSERVATORY - CLASSIFIED</h3>
+      <p>The Sun hums beneath you, alive and restless. The magnetic field twists and knots, whispering through the plasma. You feel power building, heat rising through your veins of light. The tension tightens until the world splits open in a blinding surge. You are thrown free, soaring through the corona, a living flame tearing across the dark. You are not just a spark. You are the flare, the Sun’s breath made fire.</p>
+      <button class="skip-btn" onclick="skipIntro()">BEGIN PROTOCOL</button>
+    </div>
+
+    <div id="qte" class="qte hidden">
+      <div class="prompt">Rapidly alternate <kbd>A</kbd> <kbd>D</kbd> <kbd>A</kbd> <kbd>D</kbd>… Fight the massive gravitational forces!</div>
+      <div class="bar"><div id="fill" class="fill"></div></div>
+      <div class="timer"><span id="timeLeft">10.0</span>s</div>
+    </div>
+
+    <div id="fx"></div>
+
+    <div id="endOverlay" class="overlay hidden"></div>
+    <div id="end" class="result hidden">
+      <div class="card">
+        <h2 id="endTitle">Result</h2>
+        <div id="endText" style="opacity:0.9; margin-bottom:14px;"></div>
+        <div class="row">
+          <button id="restart">Restart</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="edu" class="edu hidden">
+      <div class="box">
+        <div class="tag">Space Fact</div>
+        <h3>What is a solar storm?</h3>
+        <p id="eduText">A solar storm, also called a coronal mass ejection, is a huge bubble of plasma and magnetic field that bursts from the Sun. It zooms through space and can shake Earth's magnetic shield.</p>
+        <div class="cta">
+          <button id="eduClose">Okay!</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Flight education textboxes -->
+    <div id="flightInfo1" class="flight-info hidden">
+      <h3>🌞 Solar Flare Classification</h3>
+      <p>A solar flare is a powerful burst of energy on the Sun, caused by a sudden release of magnetic energy in active regions, usually near sunspots. During a flare, light, heat, and streams of charged particles are emitted, some of which can reach Earth and cause geomagnetic storms.</p>
+      <p>The frequency of flares depends on the 11-year solar cycle: during the maximum, they occur almost daily, while during the minimum, they are rare. Solar flares are classified by strength into classes C (weak), M (medium), and X (strong).</p>
+      <button class="continue-btn" onclick="showFlightInfo2()">Continue</button>
+    </div>
+    
+    <div id="flightInfo2" class="flight-info hidden">
+      <h3>⚡ X-Class Solar Flare Event</h3>
+      <p>Right now we can observe an X-class solar flare - the most powerful classification. These extreme events can disrupt satellite communications, GPS systems, and power grids on Earth. The charged particles you see racing through space will reach our planet in 1-3 days.</p>
+      <p>When this coronal mass ejection hits Earth's magnetosphere, it will create beautiful auroras but also pose serious risks to astronauts and technology. Emergency protocols are now in effect for the International Space Station.</p>
+      <button class="continue-btn" onclick="finishEducation()">Proceed to ISS Emergency</button>
+    </div>
+
+    <div class="tip">Press R to restart</div>
+  </div>
+
+  <script>
+    /** @type {HTMLCanvasElement} */
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    const UI = {
+      critical: document.getElementById('critical'),
+      introInfo: document.getElementById('introInfo'),
+      ambientMusic: document.getElementById('ambientMusic'),
+      qte: document.getElementById('qte'),
+      fill: document.getElementById('fill'),
+      timeLeft: document.getElementById('timeLeft'),
+      endOverlay: document.getElementById('endOverlay'),
+      end: document.getElementById('end'),
+      endTitle: document.getElementById('endTitle'),
+      endText: document.getElementById('endText'),
+      fx: document.getElementById('fx'),
+      restart: document.getElementById('restart'),
+      edu: document.getElementById('edu'),
+      eduClose: document.getElementById('eduClose'),
+      eduText: document.getElementById('eduText'),
+      flightInfo1: document.getElementById('flightInfo1'),
+      flightInfo2: document.getElementById('flightInfo2'),
+    };
+
+    // --- Sizing with device pixel ratio ---------------------------------
+    let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    let W = 0, H = 0, CX = 0, CY = 0;
+    function resize() {
+      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      const w = window.innerWidth, h = window.innerHeight;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      W = w; H = h; CX = W * 0.5; CY = H * 0.5;
+      initStars();
+    }
+    window.addEventListener('resize', resize);
+
+    // --- State machine ---------------------------------------------------
+    const State = { INTRO: 0, PAN: 1, QTE: 2, BREAKAWAY: 3, FLY: 4, FAIL: 5 };
+    let state = State.INTRO;
+
+    const INTRO_DURATION = 2.0;     
+    const PAN_DURATION   = 4.0;
+    const TIME_LIMIT     = 10.0;
+
+    // QTE tuning - Extremely hardcore challenge
+    const CHARGE_PER_ALT = 0.055;    // extremely reduced gain per input (was 0.08)
+    const DRAIN_PER_SEC  = 0.048;    // extremely aggressive drain (was 0.035)
+    const WIN_THRESHOLD  = 0.985;    // nearly impossible completion required (was 0.97)
+    const MIN_INPUT_INTERVAL = 0.15; // very strict timing window (was 0.12)
+    const MOMENTUM_DECAY = 0.85;     // rapid momentum loss (was 0.90)
+
+    let startedAt = performance.now();
+    let introAcknowledged = false; // Track if user has acknowledged the intro
+
+    // QTE variables
+    let qteActive = false;
+    let charge = 0.0;   // 0..1
+    let chargeMomentum = 0.0; // charging momentum for physics
+    let elapsed = 0.0;
+    let lastKey = '';
+    let lastInputTime = 0;
+
+    // Physics variables for massive separation
+    let massInertia = 0.0;      // accumulated mass resistance
+    let gravitationalPull = 0.0; // sun's gravity fighting separation
+    let screenShake = { x: 0, y: 0, intensity: 0 };
+    let separationForce = 0.0;  // force trying to separate the mass
+
+    // Camera follow (world coords)
+    let camX = 0, camY = 0;
+
+    // CME object in world coords - now represents wave front center
+    const cme = { x: 0, y: 0, vx: 0, vy: 0, active: false };
+    
+    // Flight education system
+    let flightEducationStarted = false;
+    let flightEducationStep = 0;
+
+    // Particle systems
+    const particles = [];
+    const solarWindParticles = [];
+    const cmeWaves = []; // Array to store multiple wave fronts
+    const chargedParticleStreams = [];
+
+    // --- Starfield -------------------------------------------------------
+    const STAR_COUNT = 420;
+    let stars = [];
+    function initStars() {
+      stars = Array.from({ length: STAR_COUNT }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        z: 0.25 + Math.random() * 0.75, // depth factor
+        tw: Math.random() * Math.PI * 2,
+        s: 0.8 + Math.random() * 1.8,
+      }));
+    }
+
+    function drawStars(t) {
+      ctx.save();
+      ctx.fillStyle = '#02030a';
+      ctx.fillRect(0, 0, W, H);
+      // parallax based on camera
+      ctx.translate(-camX * 0.03, -camY * 0.03);
+      for (const st of stars) {
+        const px = st.x; const py = st.y;
+        const twinkle = 0.75 + 0.25 * Math.sin(t * 0.002 + st.tw);
+        const alpha = 0.45 + 0.55 * twinkle * st.z;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#cfd8ff';
+        ctx.fillRect(px, py, st.s, st.s);
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
+    // --- Utilities -------------------------------------------------------
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function easeInOutSine(t) { return -(Math.cos(Math.PI * t) - 1) / 2; }
+    function easeOutQuart(t) {
+      return 1 - Math.pow(1 - t, 4);
+    }
+    function setHidden(el, yes) { if (!el) return; if (yes) { el.classList.add('hidden'); el.style.display = 'none'; } else { el.classList.remove('hidden'); el.style.display = ''; } }
+    function baseAngle(t) { return -0.2 + Math.sin(t * 0.0009) * 0.05; }
+
+    function sunWorldY() {
+      const sunR = Math.min(W, H) * 0.28;
+      const startY = -H * 2.5 - sunR * 2;  // start much higher - well beyond visible area
+      const endY = 0;                      // settle at world y = 0
+      return lerp(startY, endY, easeOutQuart(panT));
+    }
+
+    // --- Sun + Storm rendering (uses camera) ----------------------------
+    function drawSunAndStorm(t) {
+      const sunR = Math.min(W, H) * 0.28;
+      const yW = sunWorldY();
+      const Sx = CX + (0 - camX);
+      const Sy = CY + (yW - camY);
+
+      // Enhanced solar wind effect
+      updateSolarWind(sunR, t);
+
+      // Multi-layer sun rendering for better depth
+      ctx.save();
+      
+      // Far corona layer
+      ctx.globalCompositeOperation = 'lighter';
+      const coronaGrad = ctx.createRadialGradient(Sx, Sy, sunR * 0.8, Sx, Sy, sunR * 2.2);
+      coronaGrad.addColorStop(0.0, 'rgba(255,200,100,0.08)');
+      coronaGrad.addColorStop(0.4, 'rgba(255,150,60,0.12)');
+      coronaGrad.addColorStop(0.7, 'rgba(255,120,30,0.06)');
+      coronaGrad.addColorStop(1.0, 'rgba(0,0,0,0)');
+      
+      ctx.fillStyle = coronaGrad;
+      ctx.beginPath();
+      ctx.arc(Sx, Sy, sunR * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Main sun body with enhanced gradient
+      ctx.globalCompositeOperation = 'source-over';
+      const grad = ctx.createRadialGradient(
+        Sx - sunR * 0.2, Sy - sunR * 0.2, sunR * 0.1, 
+        Sx, Sy, sunR * 1.3
+      );
+      grad.addColorStop(0.0, '#fff8e1');
+      grad.addColorStop(0.15, getComputedStyle(document.documentElement).getPropertyValue('--sun1').trim() || '#fff4c9');
+      grad.addColorStop(0.35, getComputedStyle(document.documentElement).getPropertyValue('--sun2').trim() || '#ffd76a');
+      grad.addColorStop(0.65, getComputedStyle(document.documentElement).getPropertyValue('--sun3').trim() || '#ff9c2a');
+      grad.addColorStop(0.85, 'rgba(255,100,20,0.7)');
+      grad.addColorStop(1.0, 'rgba(255,60,0,0.2)');
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(Sx, Sy, sunR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Surface texture with animated plasma flows and gravitational distortion
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.globalAlpha = 0.3;
+      
+      // Add gravitational stress visualization during QTE
+      const gravDistortion = state === State.QTE ? (gravitationalPull * 0.3 + massInertia * 0.2) : 0;
+      
+      for (let i = 0; i < 8; i++) {
+        const angle = (t * 0.0002 + i * Math.PI * 0.25) % (Math.PI * 2);
+        
+        // Apply gravitational distortion
+        const distortX = gravDistortion * Math.cos(angle + t * 0.01) * sunR * 0.1;
+        const distortY = gravDistortion * Math.sin(angle + t * 0.01) * sunR * 0.1;
+        
+        const flowX = Sx + Math.cos(angle) * sunR * 0.3 + distortX;
+        const flowY = Sy + Math.sin(angle) * sunR * 0.3 + distortY;
+        const flowSize = sunR * (0.4 + 0.2 * Math.sin(t * 0.001 + i) + gravDistortion * 0.3);
+        
+        const flowGrad = ctx.createRadialGradient(flowX, flowY, 0, flowX, flowY, flowSize);
+        flowGrad.addColorStop(0, `rgba(255,${180 - gravDistortion * 50},80,0.4)`);
+        flowGrad.addColorStop(0.6, `rgba(255,${120 - gravDistortion * 30},40,0.2)`);
+        flowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        
+        ctx.fillStyle = flowGrad;
+        ctx.beginPath();
+        ctx.arc(flowX, flowY, flowSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+
+      // Enhanced corona glow with multiple layers
+      ctx.globalCompositeOperation = 'lighter';
+      
+      // Inner corona
+      ctx.beginPath();
+      ctx.arc(Sx, Sy, sunR * 1.05, 0, Math.PI * 2);
+      ctx.shadowColor = 'rgba(255,180,60,0.8)';
+      ctx.shadowBlur = sunR * 0.15;
+      ctx.strokeStyle = 'rgba(255,200,80,0.25)';
+      ctx.lineWidth = sunR * 0.02;
+      ctx.stroke();
+
+      // Outer corona
+      ctx.beginPath();
+      ctx.arc(Sx, Sy, sunR * 1.25, 0, Math.PI * 2);
+      ctx.shadowColor = 'rgba(255,160,30,0.6)';
+      ctx.shadowBlur = sunR * 0.25;
+      ctx.strokeStyle = 'rgba(255,180,60,0.15)';
+      ctx.lineWidth = sunR * 0.08;
+      ctx.stroke();
+      
+      ctx.shadowBlur = 0;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.restore();
+
+      // Storm arc + CME waves
+      drawStormArc(Sx, Sy, sunR, t);
+      drawCMEWaves(sunR, t);
+    }
+
+    function drawStormArc(Sx, Sy, sunR, t) {
+      // Don't draw arc - we're using wave visualization instead
+      if (state === State.INTRO || state === State.PAN || state === State.QTE) {
+        return; // Let the wave system handle all visualization
+      }
+      
+      // Only show minimal arc effects during breakaway/fly for transition
+      const baseR = sunR * 1.02;
+      const arcSpan = 0.8; // smaller arc
+      const ang = baseAngle(t);
+
+      const sep = (state === State.BREAKAWAY) ? clamp(sepT, 0, 1) : 0;
+      const outR = baseR + sep * sunR * 1.3;
+      const rot = sep * (0.8 + 0.6 * Math.sin(t * 0.0013));
+
+      let intensity = 0.3; // much reduced
+      const energyPulse = 0.8 + 0.4 * Math.sin(t * 0.008);
+
+      ctx.save();
+      ctx.translate(Sx + sep * sunR * 0.35, Sy - sep * sunR * 0.2 - sep * sep * sunR * 0.55);
+      ctx.rotate(rot);
+
+      const r = outR; 
+      const a0 = ang - arcSpan * 0.5; 
+      const a1 = ang + arcSpan * 0.5;
+
+      // Enhanced outer glow
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.beginPath(); 
+      ctx.arc(0, 0, r, a0, a1);
+      ctx.strokeStyle = `rgba(255,160,60,${0.15 * intensity * energyPulse})`;
+      ctx.lineWidth = Math.max(3, sunR * 0.15 * intensity);
+      ctx.shadowColor = `rgba(255,140,40,${0.9 * intensity})`;
+      ctx.shadowBlur = sunR * 0.25 * intensity;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Main arc with enhanced colors
+      ctx.beginPath(); 
+      ctx.arc(0, 0, r, a0, a1);
+      ctx.strokeStyle = `rgba(255,220,140,${0.8 * intensity})`;
+      ctx.lineWidth = Math.max(2, sunR * 0.08 * intensity);
+      ctx.stroke();
+
+      // Inner bright core
+      ctx.beginPath(); 
+      ctx.arc(0, 0, r, a0, a1);
+      ctx.strokeStyle = `rgba(255,255,200,${0.6 * intensity})`;
+      ctx.lineWidth = Math.max(1, sunR * 0.04 * intensity);
+      ctx.stroke();
+
+      ctx.globalCompositeOperation = 'source-over';
+
+      // Enhanced plasma tendrils with more dynamic movement
+      ctx.globalAlpha = 0.6 + 0.3 * intensity;
+      for (let i = 0; i < 5; i++) {
+        const rr = r - i * sunR * 0.03;
+        const phaseOffset = i * 2.1 + t * (0.002 + i * 0.0005);
+        
+        ctx.beginPath();
+        for (let a = a0; a <= a1; a += 0.03) {
+          const wob1 = Math.sin(a * 8 + phaseOffset) * sunR * 0.015 * intensity;
+          const wob2 = Math.sin(a * 12 + phaseOffset * 1.3) * sunR * 0.008 * intensity;
+          const totalWob = wob1 + wob2;
+          
+          const px = Math.cos(a) * (rr + totalWob);
+          const py = Math.sin(a) * (rr + totalWob);
+          
+          if (a === a0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        
+        const alpha = (1 - i / 5) * 0.8 * intensity;
+        ctx.strokeStyle = `rgba(255,${210 - i * 15},${150 - i * 20},${alpha})`;
+        ctx.lineWidth = Math.max(0.5, sunR * (0.020 - i * 0.003) * intensity);
+        ctx.stroke();
+      }
+      
+      // Electric discharge effects during high charge
+      if (state === State.QTE && charge > 0.4) {
+        ctx.globalAlpha = (charge - 0.4) * 1.5;
+        for (let i = 0; i < 3; i++) {
+          const dischargeAngle = ang + (Math.random() - 0.5) * arcSpan;
+          const startR = r * 0.95;
+          const endR = r * (1.1 + Math.random() * 0.3);
+          
+          const startX = Math.cos(dischargeAngle) * startR;
+          const startY = Math.sin(dischargeAngle) * startR;
+          const endX = Math.cos(dischargeAngle) * endR;
+          const endY = Math.sin(dischargeAngle) * endR;
+          
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          
+          // Jagged lightning path
+          const segments = 5;
+          for (let j = 1; j <= segments; j++) {
+            const t = j / segments;
+            const midX = lerp(startX, endX, t) + (Math.random() - 0.5) * sunR * 0.05;
+            const midY = lerp(startY, endY, t) + (Math.random() - 0.5) * sunR * 0.05;
+            ctx.lineTo(midX, midY);
+          }
+          
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+          ctx.lineWidth = Math.max(1, sunR * 0.008);
+          ctx.stroke();
+        }
+      }
+      
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
+    // CME waves and charged particle streams (world->screen)
+    function drawCMEWaves(sunR, t) {
+      const ang = baseAngle(t);
+      const yW = sunWorldY();
+      const baseR = sunR * 1.02;
+
+      // Fixed wave origin at sun surface - waves propagate from this point
+      const originX = 0 + Math.cos(ang) * baseR;
+      const originY = yW + Math.sin(ang) * baseR;
+      
+      const screenX = CX + (originX - camX);
+      const screenY = CY + (originY - camY);
+
+      // Wave intensity based on separation progress
+      let intensity;
+      if (state === State.INTRO || state === State.PAN) {
+        intensity = 0.4; // visible initial disturbance
+      } else if (state === State.QTE) {
+        intensity = 0.6 + charge * 1.2; // builds with charging
+      } else {
+        intensity = 1.5; // maximum intensity after separation
+      }
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Draw multiple expanding space ripples
+      drawSpaceRipples(screenX, screenY, sunR, intensity, t, ang);
+      
+      // Draw electromagnetic distortion waves
+      drawEMDistortions(screenX, screenY, sunR, intensity, t, ang);
+      
+      // Draw gravitational wave effects
+      if (state === State.QTE || state === State.BREAKAWAY || state === State.FLY) {
+        drawGravitationalWaves(screenX, screenY, sunR, intensity, t, ang);
+      }
+
+      ctx.restore();
+    }
+
+    // Draw space ripples - like ripples in a pond but in spacetime
+    function drawSpaceRipples(x, y, sunR, intensity, t, baseAngle) {
+      const rippleCount = 8; // more ripples for better effect
+      const maxRadius = sunR * 5.0; // expand further into space
+      
+      // Physics-based distortion effects
+      const forceDistortion = state === State.QTE ? separationForce * 0.003 : 0;
+      const gravityWarp = state === State.QTE ? gravitationalPull * 0.8 : 0;
+      
+      // Ripples are always visible, intensity varies
+      const baseIntensityMultiplier = 1.0;
+      
+      for (let i = 0; i < rippleCount; i++) {
+        const phase = (t * 0.0008 + i * 0.4) % 4; // very slow, persistent ripples
+        const radius = (phase / 4) * maxRadius;
+        let alpha = intensity * baseIntensityMultiplier * (1 - phase / 4) * 0.6;
+        
+        // Enhance during massive separation
+        if (state === State.QTE && charge > 0.2) {
+          alpha += forceDistortion * (1 - phase / 4) * 0.8;
+        }
+        
+        // Ensure ripples are always somewhat visible
+        alpha = Math.max(alpha, 0.05 * intensity);
+        
+        if (alpha > 0.01) {
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          
+          // Create circular ripple with distortions
+          const segments = 64;
+          for (let j = 0; j < segments; j++) {
+            const angle = (j / segments) * Math.PI * 2;
+            
+            // Spacetime distortion effects
+            const spaceWarp = Math.sin(angle * 3 + t * 0.002 + i * 0.5) * sunR * 0.05 * intensity;
+            const gravityDistortion = Math.cos(angle * 5 + t * 0.003) * gravityWarp * sunR * 0.08;
+            const forceWave = Math.sin(angle * 2 + t * 0.005 + charge * 8) * forceDistortion * sunR * 0.12;
+            
+            const rippleRadius = radius + spaceWarp + gravityDistortion + forceWave;
+            
+            const px = x + Math.cos(angle) * rippleRadius;
+            const py = y + Math.sin(angle) * rippleRadius;
+            
+            if (j === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          
+          // Ripple gradient - like energy propagating through space
+          const rippleGrad = ctx.createRadialGradient(x, y, radius * 0.9, x, y, radius * 1.1);
+          
+          // Color shifts based on energy intensity
+          const r = Math.min(255, 200 + forceDistortion * 100);
+          const g = Math.max(80, 140 - forceDistortion * 60);
+          const b = Math.max(40, 80 - forceDistortion * 40);
+          
+          rippleGrad.addColorStop(0, 'rgba(255,220,180,0)');
+          rippleGrad.addColorStop(0.8, `rgba(${r},${g},${b},${alpha})`);
+          rippleGrad.addColorStop(1, 'rgba(255,100,50,0)');
+          
+          ctx.strokeStyle = rippleGrad;
+          ctx.lineWidth = Math.max(1, sunR * 0.02 * intensity * (1.2 - i * 0.1));
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Pure wave-based system - no particle streams, just energy propagation
+
+    // Wave disturbance tracking for dynamic effects
+    const waveHistory = [];
+    function trackWaveDisturbance(x, y, intensity) {
+      waveHistory.push({ x, y, intensity, time: performance.now() });
+      const maxHistory = 30;
+      if (waveHistory.length > maxHistory) waveHistory.shift();
+    }
+
+    // Physics simulation for massive CME separation
+    function updateSeparationPhysics(dt) {
+      if (state !== State.QTE) return;
+      
+      // Calculate separation force based on charge
+      separationForce = charge * charge * 100; // exponential force increase
+      
+      // Progressive screen shake that gets more intense as QTE progresses
+      const progressIntensity = Math.pow(charge, 1.8); // more aggressive curve
+      const timeIntensity = Math.min(elapsed / TIME_LIMIT, 1.0); // increases over time
+      const combinedIntensity = progressIntensity * (1 + timeIntensity * 2); // both progress and time
+      
+      if (charge > 0.1) { // starts shaking earlier
+        const baseShake = combinedIntensity * 25; // increased base shake
+        const randomShake = (Math.random() - 0.5) * separationForce * 0.15; // more chaotic
+        
+        screenShake.x += (Math.random() - 0.5) * (baseShake + randomShake) * dt;
+        screenShake.y += (Math.random() - 0.5) * (baseShake + randomShake) * dt;
+        
+        // Gravitational rebound - intensifies with progress
+        const reboundForce = Math.sin(performance.now() * 0.012 * (1 + charge)) * combinedIntensity * 4;
+        screenShake.x += Math.cos(performance.now() * 0.01 * (1 + timeIntensity)) * reboundForce * dt;
+        screenShake.y += Math.sin(performance.now() * 0.01 * (1 + timeIntensity)) * reboundForce * dt;
+        
+        // Add violent tremors as we approach completion
+        if (charge > 0.8) {
+          const violentShake = Math.sin(performance.now() * 0.05) * (charge - 0.8) * 30;
+          screenShake.x += (Math.random() - 0.5) * violentShake * dt;
+          screenShake.y += (Math.random() - 0.5) * violentShake * dt;
+        }
+      }
+      
+      // Less dampening during intense moments
+      const dampening = 0.88 - (combinedIntensity * 0.1); // less dampening as intensity increases
+      screenShake.x *= dampening;
+      screenShake.y *= dampening;
+      screenShake.intensity *= 0.9;
+      
+      // Higher shake limits for more dramatic effect
+      const maxShake = 25 + (combinedIntensity * 10); // dynamic max based on intensity
+      screenShake.x = clamp(screenShake.x, -maxShake, maxShake);
+      screenShake.y = clamp(screenShake.y, -maxShake, maxShake);
+    }
+
+    // Electromagnetic distortion waves
+    function drawEMDistortions(x, y, sunR, intensity, t, baseAngle) {
+      if (state !== State.QTE && state !== State.BREAKAWAY && state !== State.FLY) return;
+      
+      const distortionCount = 4;
+      for (let i = 0; i < distortionCount; i++) {
+        const radius = sunR * (1.5 + i * 0.8) * intensity;
+        const alpha = intensity * 0.3 * (1 - i / distortionCount);
+        
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        
+        // Create electromagnetic field distortion pattern
+        const segments = 48;
+        for (let j = 0; j < segments; j++) {
+          const angle = (j / segments) * Math.PI * 2;
+          const fieldDistortion = Math.sin(angle * 4 + t * 0.004 + i) * sunR * 0.1 * intensity;
+          const emRadius = radius + fieldDistortion;
+          
+          const px = x + Math.cos(angle) * emRadius;
+          const py = y + Math.sin(angle) * emRadius;
+          
+          if (j === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        
+        ctx.strokeStyle = `rgba(100, 150, 255, ${alpha})`; // blue electromagnetic glow
+        ctx.lineWidth = Math.max(0.5, sunR * 0.015);
+        ctx.stroke();
+      }
+    }
+
+    // Gravitational wave effects
+    function drawGravitationalWaves(x, y, sunR, intensity, t, baseAngle) {
+      const gwCount = 3;
+      for (let i = 0; i < gwCount; i++) {
+        const radius = sunR * (2.0 + i * 1.2) * intensity;
+        const alpha = intensity * 0.2 * (1 - i / gwCount);
+        
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        
+        // Gravitational wave compression/expansion pattern
+        const segments = 32;
+        for (let j = 0; j < segments; j++) {
+          const angle = (j / segments) * Math.PI * 2;
+          const gwDistortion = Math.cos(angle * 2 + t * 0.003 + i * 0.7) * sunR * 0.15 * intensity;
+          const gwRadius = radius + gwDistortion;
+          
+          const px = x + Math.cos(angle) * gwRadius;
+          const py = y + Math.sin(angle) * gwRadius;
+          
+          if (j === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        
+        ctx.strokeStyle = `rgba(200, 100, 255, ${alpha})`; // purple gravitational effect
+        ctx.lineWidth = Math.max(0.8, sunR * 0.02);
+        ctx.stroke();
+      }
+    }
+
+    // Plasma bow that spans the screen during separation
+    function drawPlasmaBow(t) {
+      // Only show after separation begins, with smooth fade-in
+      if (state !== State.BREAKAWAY && state !== State.FLY) return;
+      
+      let bowIntensity = 0;
+      if (state === State.BREAKAWAY) {
+        bowIntensity = sepT * 0.8; // smooth fade-in during separation
+      } else if (state === State.FLY) {
+        bowIntensity = 0.8; // full intensity during fly
+      }
+      
+      if (bowIntensity <= 0.01) return; // don't draw if nearly invisible
+      
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      
+      // Create multiple layers of the plasma bow (rotated 90 degrees left)
+      const bowLayers = 6;
+      const bowWidth = W * 0.15; // spans 15% of screen width (was height)
+      const bowX = CX - bowWidth * 0.5; // centered horizontally
+      
+      for (let layer = 0; layer < bowLayers; layer++) {
+        const layerAlpha = bowIntensity * (1 - layer / bowLayers) * 0.4;
+        const layerOffset = layer * 8;
+        const flickerSpeed = 0.003 + layer * 0.001;
+        
+        // Create gradient for white-green flame effect (vertical gradient now)
+        const gradient = ctx.createLinearGradient(bowX - layerOffset, 0, bowX + bowWidth + layerOffset, 0);
+        const whiteIntensity = Math.sin(t * flickerSpeed + layer) * 0.3 + 0.7;
+        const greenIntensity = Math.sin(t * flickerSpeed * 1.3 + layer * 0.5) * 0.4 + 0.6;
+        
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${layerAlpha * whiteIntensity})`);
+        gradient.addColorStop(0.3, `rgba(200, 255, 180, ${layerAlpha * greenIntensity})`);
+        gradient.addColorStop(0.7, `rgba(120, 255, 120, ${layerAlpha * greenIntensity * 0.8})`);
+        gradient.addColorStop(1, `rgba(60, 200, 60, ${layerAlpha * 0.3})`);
+        
+        ctx.fillStyle = gradient;
+        
+        // Draw the bow shape with flame-like distortions (rotated 90 degrees)
+        ctx.beginPath();
+        const segments = 100;
+        for (let i = 0; i <= segments; i++) {
+          const y = (i / segments) * H;
+          const progress = i / segments;
+          
+          // Create bow curve with flame distortions (now along Y-axis)
+          const bowCurve = Math.sin(progress * Math.PI) * bowWidth;
+          const flameDistortion = Math.sin(progress * Math.PI * 8 + t * flickerSpeed * 10 + layer) * (bowWidth * 0.2);
+          const edgeDistortion = Math.sin(progress * Math.PI * 3 + t * flickerSpeed * 6) * (bowWidth * 0.1);
+          
+          const x = bowX + bowCurve + flameDistortion + edgeDistortion - layerOffset;
+          
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        
+        // Complete the bow shape
+        for (let i = segments; i >= 0; i--) {
+          const y = (i / segments) * H;
+          const progress = i / segments;
+          
+          const bowCurve = Math.sin(progress * Math.PI) * bowWidth;
+          const flameDistortion = Math.sin(progress * Math.PI * 8 + t * flickerSpeed * 10 + layer) * (bowWidth * 0.15);
+          const bottomOffset = bowWidth * 0.3;
+          
+          const x = bowX + bowCurve + flameDistortion + bottomOffset + layerOffset;
+          ctx.lineTo(x, y);
+        }
+        
+        ctx.closePath();
+        ctx.fill();
+        
+        // Add glowing edge effect
+        if (layer < 2) {
+          ctx.strokeStyle = `rgba(255, 255, 255, ${layerAlpha * 0.6})`;
+          ctx.lineWidth = 2 - layer;
+          ctx.stroke();
+        }
+      }
+      
+      // Add sparkling particles along the bow (rotated positions)
+      const sparkleCount = 20;
+      for (let i = 0; i < sparkleCount; i++) {
+        const sparkleY = (Math.random() + Math.sin(t * 0.002 + i)) * H * 0.5 + H * 0.25;
+        const progress = sparkleY / H;
+        const bowCurve = Math.sin(progress * Math.PI) * bowWidth;
+        const sparkleX = bowX + bowCurve + (Math.random() - 0.5) * bowWidth * 0.5;
+        
+        const sparkleAlpha = (Math.sin(t * 0.005 + i * 0.8) * 0.5 + 0.5) * bowIntensity * 0.8;
+        const sparkleSize = Math.random() * 3 + 1;
+        
+        ctx.beginPath();
+        ctx.arc(sparkleX, sparkleY, sparkleSize, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${sparkleAlpha})`;
+        ctx.fill();
+        
+        // Add glow around sparkle
+        ctx.beginPath();
+        ctx.arc(sparkleX, sparkleY, sparkleSize * 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(200, 255, 180, ${sparkleAlpha * 0.3})`;
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+
+    // Solar wind particles
+    function updateSolarWind(sunR, t) {
+      // Add new solar wind particles
+      if (Math.random() < 0.15) {
+        const angle = Math.random() * Math.PI * 2;
+        const startRadius = sunR * 1.3;
+        solarWindParticles.push({
+          x: CX + Math.cos(angle) * startRadius,
+          y: CY + Math.sin(angle) * startRadius,
+          vx: Math.cos(angle) * (2 + Math.random() * 3),
+          vy: Math.sin(angle) * (2 + Math.random() * 3),
+          life: 1.0,
+          maxLife: 2 + Math.random(),
+          size: 0.5 + Math.random() * 1.5
+        });
+      }
+
+      // Update and draw solar wind
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      
+      for (let i = solarWindParticles.length - 1; i >= 0; i--) {
+        const p = solarWindParticles[i];
+        p.life -= 0.008;
+        
+        if (p.life <= 0) {
+          solarWindParticles.splice(i, 1);
+          continue;
+        }
+        
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 1.02; // slight acceleration
+        p.vy *= 1.02;
+        
+        const alpha = (p.life / p.maxLife) * 0.4;
+        ctx.globalAlpha = alpha;
+        
+        ctx.fillStyle = '#ffeb99';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+
+    // Parallaxing speckles for depth around the sun
+    const speckles = [];
+    
+    function initSpeckles() {
+      speckles.length = 0;
+      for (let i = 0; i < 150; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 200 + Math.random() * 800; // various distances from sun
+        const depth = Math.random(); // 0 = far, 1 = close
+        
+        speckles.push({
+          baseX: Math.cos(angle) * distance,
+          baseY: Math.sin(angle) * distance,
+          x: 0, y: 0, // will be calculated with parallax
+          depth: depth,
+          size: (0.3 + depth * 1.2) * (0.5 + Math.random() * 0.5),
+          brightness: 0.2 + depth * 0.6,
+          twinkleSpeed: 0.001 + Math.random() * 0.002,
+          twinklePhase: Math.random() * Math.PI * 2
+        });
+      }
+    }
+    
+    function drawSpeckles(t) {
+      const yW = sunWorldY();
+      const sunScreenX = CX + (0 - camX);
+      const sunScreenY = CY + (yW - camY);
+      
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      
+      for (let i = 0; i < speckles.length; i++) {
+        const s = speckles[i];
+        
+        // Calculate parallax based on camera position and depth
+        const parallaxFactor = 0.1 + s.depth * 0.9; // closer speckles move more
+        s.x = sunScreenX + s.baseX - (camX * parallaxFactor);
+        s.y = sunScreenY + s.baseY - (camY * parallaxFactor);
+        
+        // Skip if off screen (with margin)
+        if (s.x < -50 || s.x > W + 50 || s.y < -50 || s.y > H + 50) continue;
+        
+        // Twinkling effect
+        const twinkle = Math.sin(t * s.twinkleSpeed + s.twinklePhase) * 0.5 + 0.5;
+        const alpha = s.brightness * twinkle;
+        
+        // Color based on depth - closer ones are brighter and more white
+        const r = Math.floor(180 + s.depth * 75);
+        const g = Math.floor(160 + s.depth * 60);  
+        const b = Math.floor(120 + s.depth * 40);
+        
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add subtle glow for closer speckles
+        if (s.depth > 0.7) {
+          ctx.globalAlpha = alpha * 0.3;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.size * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      
+      ctx.restore();
+    }
+
+    // --- Game flow -------------------------------------------------------
+    function beginIntro() {
+      state = State.INTRO; startedAt = performance.now();
+      introAcknowledged = false; // Reset acknowledgment flag
+      flightEducationStarted = false; flightEducationStep = 0; // Reset flight education
+      panT = 0; sepT = 0; qteActive = false; charge = 0; elapsed = 0; lastKey = '';
+      chargeMomentum = 0; massInertia = 0; gravitationalPull = 0; separationForce = 0;
+      lastInputTime = 0; screenShake = { x: 0, y: 0, intensity: 0 };
+      camX = 0; camY = -H * 2.0; cme.active = false; 
+      particles.length = 0; waveHistory.length = 0; cmeWaves.length = 0;
+      
+      // Start ambient music
+      UI.ambientMusic.volume = 0.6; // Set volume to 60%
+      UI.ambientMusic.currentTime = 0; // Start from beginning
+      UI.ambientMusic.play().catch(e => console.log('Audio autoplay blocked:', e));
+      
+      // Clean up animation classes and hide elements
+      UI.critical.classList.remove('fade-in');
+      UI.qte.classList.remove('fade-in');
+      UI.edu.classList.remove('fade-in-delayed');
+      
+      setHidden(UI.critical, true); setHidden(UI.qte, true); setHidden(UI.endOverlay, true); setHidden(UI.end, true); setHidden(UI.edu, true);
+      setHidden(UI.flightInfo1, true); setHidden(UI.flightInfo2, true); // Hide flight education
+      setHidden(UI.introInfo, false); // Show the intro textbox
+      initSpeckles(); // Initialize parallaxing speckles
+    }
+
+    function beginPan() { 
+      state = State.PAN; 
+      startedAt = performance.now(); 
+      camY = -H * 2.0; 
+      // Don't hide intro info immediately - let it stay during pan
+    }
+
+    function skipIntro() {
+      if (state === State.INTRO) {
+        introAcknowledged = true;
+        setHidden(UI.introInfo, true);
+        // Music continues playing during skip
+        if (UI.ambientMusic.paused) {
+          UI.ambientMusic.play().catch(e => console.log('Audio play failed:', e));
+        }
+        beginPan(); // Start the pan sequence after acknowledgment
+      } else if (state === State.PAN) {
+        camX = 0; camY = 0; // Jump to final position
+        beginQTE();
+      }
+    }
+    
+    function beginQTE() {
+      state = State.QTE; startedAt = performance.now(); qteActive = true; charge = 0; elapsed = 0; lastKey = '';
+      chargeMomentum = 0; massInertia = 0; gravitationalPull = 0; separationForce = 0;
+      lastInputTime = 0; screenShake = { x: 0, y: 0, intensity: 0 };
+      
+      // Hide intro info when QTE starts
+      setHidden(UI.introInfo, true);
+      
+      // Fade in the critical banner and QTE with animation
+      setHidden(UI.critical, false); 
+      UI.critical.classList.add('fade-in');
+      
+      setHidden(UI.qte, false); 
+      UI.qte.classList.add('fade-in');
+      
+      UI.fill.style.width = '0%'; UI.timeLeft.textContent = TIME_LIMIT.toFixed(1);
+      camX = 0; camY = 0; particles.length = 0; waveHistory.length = 0; cme.active = false;
+    }
+
+    function win() {
+      qteActive = false; // stop drain instantly
+      // initialize CME motion
+      const sunR = Math.min(W, H) * 0.28; const ang = baseAngle(performance.now());
+      const dist = sunR * (1.02 + 1.3);
+      cme.x = Math.cos(ang) * dist; cme.y = sunWorldY() + Math.sin(ang) * dist; cme.active = true;
+      const speed = sunR * 0.9; cme.vx = Math.cos(ang) * speed; cme.vy = Math.sin(ang) * speed * 0.8;
+      state = State.BREAKAWAY; startedAt = performance.now(); sepT = 0; 
+      
+      // Hide QTE elements and clean up classes
+      UI.critical.classList.remove('fade-in');
+      UI.qte.classList.remove('fade-in');
+      setHidden(UI.critical, true); setHidden(UI.qte, true);
+    }
+
+    function fail() {
+      qteActive = false; state = State.FAIL; startedAt = performance.now(); 
+      
+      // Clean up animation classes before hiding
+      UI.critical.classList.remove('fade-in');
+      UI.qte.classList.remove('fade-in');
+      
+      setHidden(UI.qte, true); setHidden(UI.critical, true);
+      const flash = document.createElement('div'); flash.className = 'flash'; UI.fx.appendChild(flash); setTimeout(() => flash.remove(), 320); setTimeout(showEndFail, 520);
+    }
+
+    function showEndFail() { setHidden(UI.endOverlay, false); setHidden(UI.end, false); UI.endTitle.textContent = 'Failure'; UI.endText.textContent = 'The flare collapsed back into the star.'; }
+
+    UI.restart.addEventListener('click', () => { beginIntro(); });
+    UI.eduClose.addEventListener('click', () => setHidden(UI.edu, true));
+    
+    // Flight education functions
+    function showFlightInfo1() {
+      flightEducationStep = 1;
+      setHidden(UI.edu, true);
+      setHidden(UI.flightInfo1, false);
+    }
+    
+    function showFlightInfo2() {
+      flightEducationStep = 2;
+      setHidden(UI.flightInfo1, true);
+      setHidden(UI.flightInfo2, false);
+    }
+    
+    function finishEducation() {
+      setHidden(UI.flightInfo2, true);
+      
+      // Create fade to black overlay
+      const fadeOverlay = document.createElement('div');
+      fadeOverlay.className = 'fade-to-black';
+      document.body.appendChild(fadeOverlay);
+      
+      // Redirect to iss.html after fade completes
+      setTimeout(() => {
+        window.location.href = '{{ url_for('iss_game') }}';
+      }, 3000);
+    }
+    
+    // Make functions globally accessible
+    window.showFlightInfo2 = showFlightInfo2;
+    window.finishEducation = finishEducation;
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyR') { beginIntro(); return; }
+      if (!qteActive) return; if (e.repeat) return;
+      
+      const currentTime = performance.now() / 1000;
+      if (e.code === 'KeyA' || e.code === 'KeyD') {
+        // Check for proper alternating and timing
+        const validAlternation = (e.code !== lastKey);
+        const validTiming = (currentTime - lastInputTime) >= MIN_INPUT_INTERVAL;
+        
+        if (validAlternation && validTiming) {
+          lastKey = e.code;
+          lastInputTime = currentTime;
+          
+          // Momentum-based charging - builds up with good rhythm
+          chargeMomentum = Math.min(chargeMomentum + CHARGE_PER_ALT * 1.5, 0.3);
+          
+          // Immediate charge boost with reduced resistance
+          const resistanceFactor = 1 - (massInertia * 0.15 + gravitationalPull * 0.1);
+          const chargeGain = CHARGE_PER_ALT * resistanceFactor;
+          charge = clamp(charge + chargeGain, 0, 1);
+          
+          // Physics feedback - screen shake based on separation force
+          const shakeForce = charge * 5 + Math.random() * 1.5;
+          screenShake.intensity = Math.min(screenShake.intensity + shakeForce, 15);
+          
+          UI.fill.style.width = (charge * 100).toFixed(1) + '%';
+          if (charge >= WIN_THRESHOLD) win();
+        } else {
+          // Mild penalty for bad timing or not alternating
+          chargeMomentum *= 0.8; // less momentum loss
+          if (!validAlternation) {
+            // Smaller penalty for not alternating
+            charge = clamp(charge - 0.02, 0, 1);
+            UI.fill.style.width = (charge * 100).toFixed(1) + '%';
+          }
+        }
+      }
+    });
+
+    // --- Main loop -------------------------------------------------------
+    let last = performance.now();
+    let panT = 0.0; let sepT = 0.0;
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+
+      // State timing
+      const since = (now - startedAt) / 1000;
+      switch (state) {
+        case State.INTRO:
+          // Stay in intro state until user acknowledges - no automatic progression
+          break;
+        case State.PAN:
+          panT = clamp(since / PAN_DURATION, 0, 1);
+          camY = lerp(-H * 2.0, 0, easeOutQuart(panT));
+          if (since >= PAN_DURATION) beginQTE();
+          break;
+        case State.QTE:
+          // Physics calculations for massive separation
+          updateSeparationPhysics(dt);
+          
+          // Camera with immediate, dramatic shake
+          const targetCamX = 0 + screenShake.x;
+          const targetCamY = 0 + screenShake.y;
+          camX = targetCamX; // Direct application for immediate shake
+          camY = targetCamY;
+          
+          elapsed += dt; 
+          
+          // Dynamic music volume based on intensity
+          const intensityVolume = 0.4 + (charge * 0.3); // Volume increases with charge
+          UI.ambientMusic.volume = Math.min(intensityVolume, 0.8); // Cap at 80%
+          
+          // Balanced charge physics with momentum and resistance
+          chargeMomentum *= MOMENTUM_DECAY; // momentum decays
+          massInertia = lerp(massInertia, charge * 1.2, dt * 0.3); // reduced mass resistance
+          gravitationalPull = Math.pow(1 - charge, 1.5) * 0.8; // less aggressive gravity
+          
+          const totalDrain = DRAIN_PER_SEC + massInertia * 0.008 + gravitationalPull * 0.005;
+          charge = clamp(charge + chargeMomentum * dt - totalDrain * dt, 0, 1);
+          
+          UI.fill.style.width = (charge * 100).toFixed(1) + '%';
+          const remaining = clamp(TIME_LIMIT - elapsed, 0, TIME_LIMIT); 
+          UI.timeLeft.textContent = remaining.toFixed(1);
+          if (elapsed >= TIME_LIMIT) fail();
+          break;
+        case State.BREAKAWAY:
+          // small dramatic peel plus initial motion
+          sepT = clamp(sepT + dt * 0.9, 0, 1);
+          cme.x += cme.vx * dt * 0.6; cme.y += cme.vy * dt * 0.6;
+          // camera begins to lead target
+          camX += (cme.x - camX) * 0.08; camY += (cme.y - camY) * 0.08;
+          
+          // Gradually release screen shake after flare occurs
+          const releaseRate = 1 - sepT; // faster release as separation progresses
+          screenShake.x *= (0.75 + releaseRate * 0.15); // rapid dampening
+          screenShake.y *= (0.75 + releaseRate * 0.15);
+          screenShake.intensity *= 0.8;
+          if (sepT >= 1) { 
+            state = State.FLY; 
+            startedAt = now; 
+            
+            // Show edu box with delayed fade-in (5 seconds after separation)
+            setHidden(UI.edu, false);
+            UI.edu.classList.add('fade-in-delayed');
+          }
+          break;
+        case State.FLY:
+          // accelerate gently outward; camera follows
+          const accel = 10; const vx = cme.vx; const vy = cme.vy; const vmag = Math.hypot(vx, vy) || 1;
+          cme.vx += (vx / vmag) * accel * dt; cme.vy += (vy / vmag) * accel * dt;
+          cme.x += cme.vx * dt; cme.y += cme.vy * dt;
+          camX += (cme.x - camX) * 0.10; camY += (cme.y - camY) * 0.10;
+          
+          // Show flight education after 3 seconds of flying
+          if (since >= 3.0 && !flightEducationStarted) {
+            flightEducationStarted = true;
+            showFlightInfo1();
+          }
+          
+          // Ensure all shake is gone during peaceful fly state
+          screenShake.x *= 0.85;
+          screenShake.y *= 0.85;
+          screenShake.intensity *= 0.9;
+          break;
+        case State.FAIL:
+          // camera stays on sun
+          camX += (0 - camX) * 0.1; camY += (0 - camY) * 0.1; break;
+      }
+
+      // Render
+      drawStars(now);
+      drawSpeckles(now);
+      drawSunAndStorm(now);
+      drawPlasmaBow(now);
+
+      requestAnimationFrame(frame);
+    }
+
+    // Kick off
+    resize(); beginIntro(); requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

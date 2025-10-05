@@ -1,0 +1,1366 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Helicopter — W to climb</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    /* No HUD during play. Minimal reset styling only. */
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <script>
+  // --- Canvas setup ---
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  function fit() { canvas.width = innerWidth; canvas.height = innerHeight; }
+  addEventListener('resize', fit); fit();
+
+  // Polyfill: roundRect for older browsers
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+      const rr = Math.min(r || 0, Math.abs(w)/2, Math.abs(h)/2);
+      this.beginPath();
+      this.moveTo(x + rr, y);
+      this.lineTo(x + w - rr, y);
+      this.arcTo(x + w, y, x + w, y + rr, rr);
+      this.lineTo(x + w, y + h - rr);
+      this.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+      this.lineTo(x + rr, y + h);
+      this.arcTo(x, y + h, x, y + h - rr, rr);
+      this.lineTo(x, y + rr);
+      this.arcTo(x, y, x + rr, y, rr);
+      this.closePath();
+      return this;
+    };
+  }
+
+  // --- Fade-in system ---
+  let fadeOpacity = 1.0; // Start black, fade to transparent
+  let fadeStartTime = performance.now();
+  const fadeDuration = 5000; // 5 seconds slower fade
+  
+  // --- Initial instruction system ---
+  let showInstructions = false;
+  let instructionOpacity = 0;
+  let instructionStartTime = 0;
+  let typewriterText = '';
+  let typewriterProgress = 0;
+  let typewriterStartTime = 0;
+  const fullText = 'Meanwhile on Earth';
+  let showInstructionBox = false;
+
+  // --- Helicopter sprite loading ---
+  const heliImg = new Image();
+  let heliLoaded = false;
+  heliImg.onload = () => {
+    heliLoaded = true;
+  };
+  heliImg.src = '/static/resources/heli.png';
+
+  // --- Icon loading ---
+  const iconImg = new Image();
+  let iconLoaded = false;
+  iconImg.onload = () => {
+    iconLoaded = true;
+  };
+  iconImg.src = 'resources/icon.png';
+
+  // --- Audio loading for dialogue ---
+  let audioInitialized = false;
+  const dialogueAudio = {
+    line1: new Audio(),
+    line2: new Audio(),
+    line3: new Audio()
+  };
+  
+  // Set audio sources and properties
+  dialogueAudio.line1.src = '/static/resources/1.ogg';
+  dialogueAudio.line2.src = '/static/resources/confirmed.mp3';
+  dialogueAudio.line3.src = '/static/resources/2.ogg';
+  
+  // --- Bird sprite loading ---
+  const birdImg = new Image();
+  let birdLoaded = false;
+  birdImg.onload = () => {
+    birdLoaded = true;
+    console.log('Bird sprite loaded successfully');
+  };
+  birdImg.onerror = () => {
+    console.log('Bird sprite failed to load from:', birdImg.src);
+    birdLoaded = false;
+  };
+  birdImg.src = '/static/resources/bird.png';
+  
+  // --- Helicopter loop audio ---
+  const heliLoopAudio = new Audio('/static/resources/helicopter_loop.mp3');
+  heliLoopAudio.loop = true;
+  heliLoopAudio.volume = 0.25; // Quieter helicopter sound
+  heliLoopAudio.preload = 'auto';
+  let heliAudioInitialized = false;
+  
+  // Configure audio
+  Object.values(dialogueAudio).forEach(audio => {
+    audio.preload = 'auto';
+    audio.volume = 1.0; // Maximum volume (HTML audio max is 1.0)
+  });
+
+  // --- Game state ---
+  let state = 'ready'; // 'ready' -> 'play' -> 'dead'
+  let last = performance.now();
+  let wHeld = false;
+
+  addEventListener('keydown', (e) => {
+    const k = e.key.toLowerCase();
+    
+    // Initialize audio on first user interaction
+    if (!audioInitialized) {
+      initializeAudio();
+      audioInitialized = true;
+    }
+    
+    // Start helicopter loop audio
+    if (!heliAudioInitialized) {
+      startHelicopterAudio();
+      heliAudioInitialized = true;
+    }
+    
+    if (k === 'w') { wHeld = true; e.preventDefault(); if (state === 'ready') state = 'play'; }
+    if (k === 'r') { reset(); }
+    if ((k === 'enter' || k === ' ') && showTextbox && gamePaused) {
+      // Close textbox and resume game
+      showTextbox = false;
+      gamePaused = false;
+      textboxOpacity = 0;
+      textboxDismissed = true; // Prevent textbox from showing again
+      
+      // Start dialogue after SEU notification closes
+      showDialogue = true;
+      dialogueStartTime = performance.now();
+      
+      // Play first dialogue audio
+      playDialogueAudio(0);
+      
+      e.preventDefault();
+    }
+    if ((k === 'enter' || k === ' ') && showDialogue && currentDialogueLine < dialogueLines.length) {
+      // Advance to next dialogue line
+      if (dialogueCharIndex >= dialogueLines[currentDialogueLine].text.length) {
+        currentDialogueLine++;
+        dialogueCharIndex = 0;
+        dialogueTypewriterText = '';
+        dialogueLastCharTime = 0;
+        
+        // Play audio for new dialogue line
+        if (currentDialogueLine < dialogueLines.length) {
+          playDialogueAudio(currentDialogueLine);
+        }
+        
+        if (currentDialogueLine >= dialogueLines.length) {
+          // End dialogue
+          showDialogue = false;
+          dialogueOpacity = 0;
+          dialogueEnded = true;
+          // Start bird evasion after dialogue ends
+          birdEventsActive = true;
+          birdPhaseStartTime = performance.now();
+          startX = heli.x; // Record starting position for distance tracking
+          nextBirdSpawn = performance.now() + 1500; // First bird in 1.5 seconds
+        }
+      } else {
+        // Complete current line instantly
+        dialogueTypewriterText = dialogueLines[currentDialogueLine].text;
+        dialogueCharIndex = dialogueLines[currentDialogueLine].text.length;
+      }
+      e.preventDefault();
+    }
+  }, { passive: false });
+  addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'w') wHeld = false; }, { passive: true });
+
+  const world = {
+    groundY: Math.floor(canvas.height * 0.85),
+    t: 0,
+    cloudsOffset: 0,
+    hillsOffset: 0,
+    nearOffset: 0,
+  };
+
+  const heli = {
+    x: Math.floor(canvas.width * 0.2),
+    y: Math.floor(canvas.height * 0.4), // spawn in the air
+    vy: 0,
+    r: Math.max(16, Math.min(32, Math.floor(canvas.height * 0.03))),
+    rotor: 0,
+  };
+
+  // HUD system removed
+
+  // --- Solar Flare System ---
+  let flightTime = 0;
+  let solarFlareTriggered = false;
+  let flareWaveProgress = 0;
+  let auroraIntensity = 0;
+  let screenFlash = 0;
+  let showTextbox = false;
+  let textboxOpacity = 0;
+  let gamePaused = false;
+  let textboxDismissed = false;
+  
+  // --- Dialogue System ---
+  let showDialogue = false;
+  let dialogueOpacity = 0;
+  let currentDialogueLine = 0;
+  let dialogueTypewriterText = '';
+  let dialogueCharIndex = 0;
+  let dialogueLastCharTime = 0;
+  const dialogueLines = [
+    { speaker: 'Pilot', text: 'What the hell… the panel\'s flickering. I\'ve lost part of the navigation.' },
+    { speaker: 'Co-pilot', text: 'Confirmed, the system\'s unstable. Checking backup power.' },
+    { speaker: 'Pilot', text: 'Radar\'s jumping, comms are full of static… looks like we\'re starting to lose electronics.' }
+  ];
+  let dialogueStartTime = 0;
+  
+  // --- Damage Overlay & Warnings System ---
+  let showDamageOverlay = false;
+  let damageOverlayIntensity = 0;
+  let showWarnings = false;
+  let warningMessages = [
+    'SYSTEM ERROR: Kernel panic detected',
+    'WARNING: Navigation system offline',
+    'ALERT: Communication array unstable',
+    'ERROR: Backup power failure imminent',
+    'CRITICAL: Multiple system failures'
+  ];
+  let currentWarningIndex = 0;
+  let lastWarningTime = 0;
+  let warningFlashTime = 0;
+  let dialogueEnded = false;
+  
+  // --- Bird Evasion System ---
+  let birds = [];
+  let nextBirdSpawn = 0;
+  let birdSpawnInterval = 1500; // 1.5 seconds between birds
+  
+  // Bird dialogue system
+  let birdDialogueQueue = [
+    { speaker: "Co-pilot", text: "I see a flock ahead!" },
+    { speaker: "Pilot", text: "Oh, I see them! We need to change position." },
+    { speaker: "Co-pilot", text: "Easy, don't lose altitude — they're coming straight at us!" },
+    { speaker: "Pilot", text: "That was close." }
+  ];
+  let currentBirdDialogue = 0;
+  let birdDialogueActive = false;
+  let birdDialogueStarted = false;
+  let birdEventsActive = false;
+  let birdPhaseStartTime = 0;
+  let showRunwayNotification = false;
+  let runwayNotificationOpacity = 0;
+  let landingZoneActive = false;
+  let landingZoneX = 0;
+  let distanceTraveled = 0;
+  let startX = 0;
+  let showLandingNotification = false;
+  let landingNotificationOpacity = 1.0;
+  let safeToLand = false;
+  let landingTime = 0;
+  let landingFadeOpacity = 0;
+  let showLandingFade = false;
+
+  function reset() {
+    state = 'ready';
+    world.groundY = Math.floor(canvas.height * 0.85);
+    world.t = 0; world.cloudsOffset = 0; world.hillsOffset = 0; world.nearOffset = 0;
+    heli.x = Math.floor(canvas.width * 0.2);
+    heli.y = Math.floor(canvas.height * 0.4);
+    heli.vy = 0; heli.rotor = 0;
+    wHeld = false;
+    
+    // HUD system removed
+    
+    // Reset solar flare system
+    flightTime = 0;
+    solarFlareTriggered = false;
+    flareWaveProgress = 0;
+    auroraIntensity = 0;
+    screenFlash = 0;
+    showTextbox = false;
+    textboxOpacity = 0;
+    gamePaused = false;
+    textboxDismissed = false;
+    
+    // Reset dialogue system
+    showDialogue = false;
+    dialogueOpacity = 0;
+    currentDialogueLine = 0;
+    dialogueTypewriterText = '';
+    dialogueCharIndex = 0;
+    dialogueLastCharTime = 0;
+    dialogueStartTime = 0;
+    
+    // Reset damage overlay and warnings
+    showDamageOverlay = false;
+    damageOverlayIntensity = 0;
+    showWarnings = false;
+    currentWarningIndex = 0;
+    lastWarningTime = 0;
+    warningFlashTime = 0;
+    dialogueEnded = false;
+    
+    // Reset bird evasion system
+    birds = [];
+    nextBirdSpawn = 0;
+    birdEventsActive = false;
+    birdPhaseStartTime = 0;
+    birdDialogueActive = false;
+    currentBirdDialogue = 0;
+    birdDialogueStarted = false;
+    showRunwayNotification = false;
+    runwayNotificationOpacity = 0;
+    landingZoneActive = false;
+    landingZoneX = 0;
+    distanceTraveled = 0;
+    startX = 0;
+    showLandingNotification = false;
+    landingNotificationOpacity = 1.0;
+    safeToLand = false;
+    landingTime = 0;
+    landingFadeOpacity = 0;
+    showLandingFade = false;
+    
+    // Reset helicopter audio
+    stopHelicopterAudio();
+    heliAudioInitialized = false;
+    
+    // Reset instruction system
+    showInstructions = false;
+    instructionOpacity = 0;
+    instructionStartTime = 0;
+    typewriterText = '';
+    typewriterProgress = 0;
+    typewriterStartTime = 0;
+    showInstructionBox = false;
+    
+    // Reset fade system
+    fadeOpacity = 1.0;
+    fadeStartTime = performance.now();
+  }
+
+  // --- Background drawing ---
+  function drawBackground(dt) {
+    const w = canvas.width, h = canvas.height;
+
+    // Sky gradient
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#18315A');
+    g.addColorStop(1, '#061422');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Parallax parameters
+    world.cloudsOffset = (world.cloudsOffset + 40 * dt) % w;   // far
+    world.hillsOffset  = (world.hillsOffset  + 80 * dt) % w;   // mid
+    world.nearOffset   = (world.nearOffset   + 140 * dt) % 120; // near ground stripes
+
+    // Clouds layer
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#ffffff';
+    for (let i = -1; i <= 1; i++) {
+      for (let row = 0; row < 3; row++) {
+        const baseX = -world.cloudsOffset + i * w + (row * 260);
+        const baseY = h * 0.15 + row * 90;
+        drawCloud(baseX, baseY);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Simple mountain silhouettes (three layers for depth)
+    drawSimpleMountains(w, h, world.groundY, world.hillsOffset);
+
+    // Ground + near stripes
+    ctx.fillStyle = '#0a1e2d';
+    ctx.fillRect(0, world.groundY, w, h - world.groundY);
+    ctx.fillStyle = '#0c273a';
+    for (let x = -120; x < w + 120; x += 120) {
+      ctx.fillRect(x - world.nearOffset, world.groundY, 60, 6);
+    }
+  }
+
+  function drawCloud(x, y) {
+    const r = 26;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(x + 32, y + 10, r * 0.9, 0, Math.PI * 2);
+    ctx.arc(x - 30, y + 10, r * 0.82, 0, Math.PI * 2);
+    ctx.arc(x + 8, y - 14, r * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawSimpleMountains(w, h, groundY, offset) {
+    // Far mountains (slowest parallax)
+    ctx.fillStyle = '#1a3a52';
+    const farOffset = -offset * 0.2;
+    drawMountainLayer(w, groundY, h * 0.3, farOffset, [
+      { x: 0.1, height: 0.8 },
+      { x: 0.3, height: 0.6 },
+      { x: 0.5, height: 0.9 },
+      { x: 0.7, height: 0.4 },
+      { x: 0.9, height: 0.7 }
+    ]);
+    
+    // Mid mountains (medium parallax)
+    ctx.fillStyle = '#0f2e42';
+    const midOffset = -offset * 0.5;
+    drawMountainLayer(w, groundY, h * 0.25, midOffset, [
+      { x: 0.05, height: 0.7 },
+      { x: 0.25, height: 0.9 },
+      { x: 0.45, height: 0.5 },
+      { x: 0.65, height: 0.8 },
+      { x: 0.85, height: 0.6 }
+    ]);
+    
+    // Near mountains (fastest parallax)
+    ctx.fillStyle = '#0b2a3d';
+    const nearOffset = -offset;
+    drawMountainLayer(w, groundY, h * 0.2, nearOffset, [
+      { x: 0.2, height: 0.8 },
+      { x: 0.4, height: 0.6 },
+      { x: 0.6, height: 0.7 },
+      { x: 0.8, height: 0.5 }
+    ]);
+  }
+  
+  function drawMountainLayer(w, groundY, maxHeight, offset, peaks) {
+    ctx.save();
+    
+    // Ensure no stroke is applied to prevent blue outlines
+    ctx.strokeStyle = 'transparent';
+    ctx.lineWidth = 0;
+    
+    ctx.beginPath();
+    ctx.moveTo(offset - w, groundY);
+    
+    // Draw smooth mountain silhouette
+    for (let section = -1; section <= 2; section++) {
+      const sectionX = offset + section * w;
+      let lastX = offset + section * w;
+      let lastY = groundY;
+      
+      for (const peak of peaks) {
+        const x = sectionX + peak.x * w;
+        const y = groundY - maxHeight * peak.height;
+        
+        if (section === -1 || section === 0) {
+          // Use smooth curves instead of sharp lines
+          const midX = (lastX + x) / 2;
+          ctx.quadraticCurveTo(midX, lastY, x, y);
+          lastX = x;
+          lastY = y;
+        }
+      }
+    }
+    
+    ctx.lineTo(offset + w * 2, groundY);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.restore();
+  }
+
+  // --- Helicopter drawing ---
+  function drawHeli() {
+    const { x, y, r } = heli;
+    ctx.save();
+    ctx.translate(x, y);
+
+    if (heliLoaded) {
+      // Draw helicopter sprite rotated 90 degrees to the right
+      ctx.rotate(Math.PI / 2); // 90 degrees clockwise
+      const size = r * 5; // Much bigger sprite size
+      ctx.drawImage(heliImg, -size/2, -size/2, size, size);
+    } else {
+      // Fallback to original drawing if sprite not loaded
+      ctx.fillStyle = '#e3f2fd';
+      ctx.strokeStyle = '#cfe8ff';
+      ctx.lineWidth = 2;
+      ctx.roundRect(-r * 0.8, -r * 0.42, r * 1.6, r * 0.84, r * 0.22);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // HUD system removed
+
+  // --- Solar Flare Effects ---
+  function drawSolarFlareEffects() {
+    if (!solarFlareTriggered) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    ctx.save();
+    
+    // Green wave sweeping across sky
+    if (flareWaveProgress < 1) {
+      const waveX = w * flareWaveProgress;
+      const waveWidth = w * 0.3;
+      
+      const gradient = ctx.createLinearGradient(waveX - waveWidth/2, 0, waveX + waveWidth/2, 0);
+      gradient.addColorStop(0, 'rgba(0, 255, 100, 0)');
+      gradient.addColorStop(0.5, 'rgba(0, 255, 100, 0.6)');
+      gradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(waveX - waveWidth/2, 0, waveWidth, h * 0.7);
+    }
+    
+    // Horizontal Aurora effects
+    if (auroraIntensity > 0) {
+      ctx.globalAlpha = auroraIntensity;
+      
+      // Multiple horizontal aurora bands
+      for (let i = 0; i < 4; i++) {
+        const y = h * 0.1 + i * h * 0.15; // Horizontal bands in upper sky
+        const auroraGrad = ctx.createLinearGradient(0, y - 20, 0, y + 20);
+        auroraGrad.addColorStop(0, 'rgba(0, 255, 100, 0)');
+        auroraGrad.addColorStop(0.5, 'rgba(0, 255, 100, 0.6)');
+        auroraGrad.addColorStop(1, 'rgba(0, 255, 100, 0)');
+        
+        ctx.fillStyle = auroraGrad;
+        
+        // Wavy horizontal aurora band
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        for (let x = 0; x < w; x += 15) {
+          const wave = Math.sin(x * 0.01 + world.t * 3 + i * 2) * 15;
+          ctx.lineTo(x, y + wave);
+        }
+        ctx.lineTo(w, y + 20);
+        ctx.lineTo(0, y + 20);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      ctx.globalAlpha = 1;
+    }
+    
+    ctx.restore();
+  }
+  
+  function drawScreenFlash() {
+    if (screenFlash > 0) {
+      ctx.fillStyle = `rgba(255, 255, 255, ${screenFlash * 0.8})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+  
+  function drawEducationalTextbox() {
+    if (!showTextbox || textboxOpacity <= 0) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    const boxWidth = Math.min(500, w * 0.8);
+    const boxHeight = 120;
+    const boxX = (w - boxWidth) / 2;
+    const boxY = h * 0.25;
+    
+    ctx.save();
+    ctx.globalAlpha = textboxOpacity;
+    
+    // Simple filled rectangle background - no borders or strokes
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    
+    // Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    const titleText = 'SOLAR FLARE DETECTED';
+    ctx.fillText(titleText, boxX + 20, boxY + 30);
+    
+    // Draw icon to the right of the title text if loaded
+    if (iconLoaded) {
+      const iconSize = 24;
+      const titleWidth = ctx.measureText(titleText).width;
+      ctx.drawImage(iconImg, boxX + 20 + titleWidth + 10, boxY + 15, iconSize, iconSize);
+    }
+    
+    // Educational text (kid-friendly)
+    ctx.fillStyle = '#cccccc';
+    ctx.font = '12px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    const textLines = [
+      'The Sun just shot out a powerful energy blast called a solar flare!',
+      'This energy can mess up computers and electronics in airplanes.',
+      'When this happens, pilots have to be extra careful because their',
+      'instruments might stop working correctly for a little while.'
+    ];
+    
+    for (let i = 0; i < textLines.length; i++) {
+      ctx.fillText(textLines[i], boxX + 20, boxY + 50 + i * 16);
+    }
+    
+    // OK Button
+    const buttonWidth = 80;
+    const buttonHeight = 25;
+    const buttonX = boxX + boxWidth - buttonWidth - 15;
+    const buttonY = boxY + boxHeight - buttonHeight - 10;
+    
+    // Button background
+    ctx.fillStyle = '#0066cc';
+    ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+    
+    // Button text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('OK', buttonX + buttonWidth/2, buttonY + buttonHeight/2 + 4);
+    
+    // Instructions
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '10px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Press ENTER or SPACE to continue', boxX + boxWidth/2, boxY + boxHeight - 3);
+    
+    ctx.restore();
+  }
+  
+  function drawInstructionTextbox() {
+    if (!showInstructions) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    ctx.save();
+    
+    // Typewriter effect for "Meanwhile on Earth"
+    if (typewriterStartTime === 0) {
+      typewriterStartTime = performance.now();
+    }
+    
+    const typewriterElapsed = performance.now() - typewriterStartTime;
+    const charsToShow = Math.floor(typewriterElapsed / 100); // 100ms per character
+    typewriterText = fullText.substring(0, charsToShow);
+    
+    // Show typewriter text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(typewriterText, w / 2, h * 0.45);
+    
+    // Show instruction box after typewriter is complete + delay
+    if (charsToShow >= fullText.length && typewriterElapsed > fullText.length * 100 + 1000) {
+      showInstructionBox = true;
+    }
+    
+    if (showInstructionBox) {
+      if (instructionOpacity < 1) {
+        instructionOpacity = Math.min(1, instructionOpacity + 0.02); // Smooth fade-in
+      }
+      
+      ctx.globalAlpha = instructionOpacity;
+      
+      // Instruction box
+      const boxWidth = Math.min(400, w * 0.7);
+      const boxHeight = 80;
+      const boxX = (w - boxWidth) / 2;
+      const boxY = h * 0.7; // Lower position
+      
+      // Simple filled rectangle background - no borders or strokes (more opaque)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+      ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+      
+      // Instruction text (centered in box)
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '16px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Press W to start flying and stay in the air!', boxX + boxWidth/2, boxY + boxHeight/2 + 6);
+    }
+    
+    ctx.restore();
+  }
+  
+  function drawDialogue() {
+    // Check which dialogue to show
+    let currentDialogueSource = dialogueLines;
+    let maxLines = dialogueLines.length;
+    
+    if (birdDialogueActive) {
+      currentDialogueSource = birdDialogueQueue;
+      maxLines = birdDialogueQueue.length;
+    }
+    
+    if (!showDialogue || currentDialogueLine >= maxLines) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    const boxWidth = w;
+    const boxHeight = 120;
+    const boxX = 0;
+    const boxY = h - boxHeight;
+    
+    // Fade in dialogue box
+    if (dialogueOpacity < 1) {
+      dialogueOpacity = Math.min(1, dialogueOpacity + 0.03);
+    }
+    
+    ctx.save();
+    ctx.globalAlpha = dialogueOpacity;
+    
+    // Dialogue box background (spans bottom of screen)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    
+    // Typewriter effect for current line
+    const currentTime = performance.now();
+    if (dialogueLastCharTime === 0) {
+      dialogueLastCharTime = currentTime;
+    }
+    
+    // Use appropriate dialogue source
+    let dialogueSource = birdDialogueActive ? birdDialogueQueue : dialogueLines;
+    const currentLine = dialogueSource[currentDialogueLine];
+    
+    if (currentTime - dialogueLastCharTime > 50 && dialogueCharIndex < currentLine.text.length) {
+      dialogueCharIndex++;
+      dialogueLastCharTime = currentTime;
+    }
+    
+    dialogueTypewriterText = currentLine.text.substring(0, dialogueCharIndex);
+    
+    // Speaker name
+    ctx.fillStyle = '#ffaa00';
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(currentLine.speaker + ':', boxX + 20, boxY + 30);
+    
+    // Dialogue text with word wrapping
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '14px Arial, sans-serif';
+    const maxWidth = boxWidth - 40;
+    const words = dialogueTypewriterText.split(' ');
+    let line = '';
+    let y = boxY + 55;
+    
+    for (let i = 0; i < words.length; i++) {
+      const testLine = line + words[i] + ' ';
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxWidth && i > 0) {
+        ctx.fillText(line, boxX + 20, y);
+        line = words[i] + ' ';
+        y += 20;
+      } else {
+        line = testLine;
+      }
+    }
+    ctx.fillText(line, boxX + 20, y);
+    
+    // Show continue indicator when line is complete
+    if (dialogueCharIndex >= currentLine.text.length) {
+      ctx.fillStyle = '#aaaaaa';
+      ctx.font = '12px Arial, sans-serif';
+      ctx.textAlign = 'right';
+      let maxDialogueLines = birdDialogueActive ? birdDialogueQueue.length : dialogueLines.length;
+      if (currentDialogueLine < maxDialogueLines - 1) {
+        ctx.fillText('Press ENTER or SPACE to continue', boxX + boxWidth - 20, boxY + boxHeight - 10);
+      } else {
+        ctx.fillText('Press ENTER or SPACE to close', boxX + boxWidth - 20, boxY + boxHeight - 10);
+      }
+    }
+    
+    ctx.restore();
+  }
+  
+  function drawDamageOverlay() {
+    if (!showDamageOverlay || damageOverlayIntensity <= 0) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    ctx.save();
+    ctx.globalAlpha = damageOverlayIntensity;
+    
+    // Red vignette effect in corners
+    const gradient = ctx.createRadialGradient(w/2, h/2, Math.min(w, h) * 0.3, w/2, h/2, Math.min(w, h) * 0.7);
+    gradient.addColorStop(0, 'rgba(255, 0, 0, 0)');
+    gradient.addColorStop(1, 'rgba(255, 0, 0, 0.4)');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+    
+    // Additional corner overlays for stronger effect
+    const cornerSize = Math.min(w, h) * 0.15;
+    ctx.fillStyle = `rgba(255, 0, 0, ${0.3 * damageOverlayIntensity})`;
+    
+    // Top corners
+    ctx.fillRect(0, 0, cornerSize, cornerSize);
+    ctx.fillRect(w - cornerSize, 0, cornerSize, cornerSize);
+    
+    // Bottom corners
+    ctx.fillRect(0, h - cornerSize, cornerSize, cornerSize);
+    ctx.fillRect(w - cornerSize, h - cornerSize, cornerSize, cornerSize);
+    
+    ctx.restore();
+  }
+  
+  function drawWarnings() {
+    if (!showWarnings) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    const currentTime = performance.now();
+    
+    // Flash warning messages
+    if (currentTime - lastWarningTime > 2000) { // Change warning every 2 seconds
+      currentWarningIndex = (currentWarningIndex + 1) % warningMessages.length;
+      lastWarningTime = currentTime;
+      warningFlashTime = currentTime;
+    }
+    
+    // Flash effect for warnings
+    const flashElapsed = currentTime - warningFlashTime;
+    let flashIntensity = 1;
+    if (flashElapsed < 300) {
+      flashIntensity = Math.sin((flashElapsed / 300) * Math.PI * 4) * 0.5 + 0.5;
+    }
+    
+    ctx.save();
+    ctx.globalAlpha = flashIntensity;
+    
+    // Warning message in top-right corner
+    ctx.fillStyle = '#ff0000';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(warningMessages[currentWarningIndex], w - 20, 30);
+    
+    // Additional system error indicators
+    ctx.fillStyle = '#ff6600';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText('SYS ERR [0x7F4A2B1C]', w - 20, 50);
+    ctx.fillText('PWR FLUCTUATION DETECTED', w - 20, 70);
+    
+    ctx.restore();
+  }
+  
+  function initializeAudio() {
+    // Create a dummy audio play to unlock audio context
+    const dummyAudio = new Audio();
+    dummyAudio.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmUeAy2H0fLXeC';
+    dummyAudio.play().then(() => {
+      dummyAudio.pause();
+      console.log('Audio context initialized');
+    }).catch(e => {
+      console.log('Audio context initialization failed:', e);
+    });
+  }
+  
+  function playDialogueAudio(lineIndex) {
+    if (!audioInitialized) {
+      console.log('Audio not initialized yet');
+      return;
+    }
+    
+    try {
+      // Stop any currently playing dialogue audio
+      Object.values(dialogueAudio).forEach(audio => {
+        if (!audio.paused) {
+          audio.pause();
+        }
+        audio.currentTime = 0;
+      });
+      
+      // Play audio for specific line
+      let audioToPlay;
+      switch (lineIndex) {
+        case 0:
+          audioToPlay = dialogueAudio.line1;
+          break;
+        case 1:
+          audioToPlay = dialogueAudio.line2;
+          break;
+        case 2:
+          audioToPlay = dialogueAudio.line3;
+          break;
+        default:
+          return;
+      }
+      
+      console.log(`Playing audio for line ${lineIndex}:`, audioToPlay.src);
+      
+      const playPromise = audioToPlay.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log(`Audio ${lineIndex} playing successfully`);
+          })
+          .catch(e => {
+            console.log(`Audio ${lineIndex} play failed:`, e);
+            console.log('Audio ready state:', audioToPlay.readyState);
+            console.log('Audio network state:', audioToPlay.networkState);
+          });
+      }
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  }
+  
+  function createBird() {
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    return {
+      x: w + 50, // Start off-screen right
+      y: Math.random() * (h * 0.6) + h * 0.1, // Random height in upper 60% of screen
+      vx: -250 - Math.random() * 150, // Speed: 250-400 pixels/second leftward
+      vy: (Math.random() - 0.5) * 75, // More erratic vertical movement
+      size: 45 + Math.random() * 25, // Even bigger birds: 45-70 pixels
+      alive: true
+    };
+  }
+  
+  function updateBirds(dt) {
+    const currentTime = performance.now();
+    
+    // Only do timing logic if bird events were started
+    if (birdPhaseStartTime > 0) {
+      const birdPhaseElapsed = currentTime - birdPhaseStartTime;
+      
+      // Calculate distance traveled
+      distanceTraveled = Math.abs(heli.x - startX);
+      
+      // Show runway notification after 30 seconds
+      if (birdPhaseElapsed >= 30000 && !showRunwayNotification) {
+        showRunwayNotification = true;
+      }
+      
+      // Hide runway notification after 35 seconds
+      if (birdPhaseElapsed >= 35000 && showRunwayNotification) {
+        showRunwayNotification = false;
+      }
+      
+      // Stop spawning birds after 40 seconds and activate safe landing
+      if (birdPhaseElapsed >= 40000) {
+        birdEventsActive = false;
+        
+        if (!safeToLand) {
+          safeToLand = true;
+          showLandingNotification = true; // Show landing notification
+        }
+      }
+      
+      // Spawn new birds (only during active phase)
+      if (birdEventsActive && currentTime >= nextBirdSpawn) {
+        // Start bird dialogue on first spawn (delayed by 5 seconds)
+        if (!birdDialogueStarted) {
+          birdDialogueStarted = true;
+          
+          // Delay the bird dialogue by 5 seconds
+          setTimeout(() => {
+            birdDialogueActive = true;
+            
+            // Reset and switch dialogue system to bird dialogue
+            showDialogue = true;
+            currentDialogueLine = 0;
+            dialogueCharIndex = 0;
+            dialogueTypewriterText = '';
+            dialogueLastCharTime = 0;
+            dialogueOpacity = 0;
+          }, 5000); // 5 second delay
+        }
+        
+        // Spawn 1-3 birds at once (30% chance for multiple birds)
+        const birdCount = Math.random() < 0.3 ? (Math.random() < 0.5 ? 2 : 3) : 1;
+        
+        for (let i = 0; i < birdCount; i++) {
+          const bird = createBird();
+          // Slightly stagger multiple birds vertically and horizontally
+          if (i > 0) {
+            bird.y += (i - 1) * 100; // Spread vertically
+            bird.x += i * 80; // Slight horizontal offset
+          }
+          birds.push(bird);
+        }
+        
+        nextBirdSpawn = currentTime + birdSpawnInterval + Math.random() * 1000; // 1.5-2.5 seconds
+      }
+    }
+    
+    // Update existing birds
+    for (let i = birds.length - 1; i >= 0; i--) {
+      const bird = birds[i];
+      
+      bird.x += bird.vx * dt;
+      bird.y += bird.vy * dt;
+      
+      // Remove birds that have gone off-screen
+      if (bird.x < -100) {
+        birds.splice(i, 1);
+        continue;
+      }
+      
+      // Check collision with helicopter
+      const dx = bird.x - heli.x;
+      const dy = bird.y - heli.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < (bird.size/2 + heli.r) && state === 'play') {
+        // Bird collision - game over
+        state = 'dead';
+        bird.alive = false;
+      }
+    }
+    
+
+  }
+  
+  function drawBirds() {
+    if (!birdEventsActive) return;
+    
+    for (const bird of birds) {
+      if (!bird.alive) continue;
+      
+      ctx.save();
+      ctx.translate(bird.x, bird.y);
+      
+      if (birdLoaded && birdImg.complete) {
+        // Draw bird sprite rotated 90 degrees to the right
+        ctx.rotate(Math.PI / 2); // 90 degrees clockwise
+        ctx.drawImage(birdImg, -bird.size/2, -bird.size/2, bird.size, bird.size);
+        console.log('Drawing bird sprite'); // Debug log
+      } else {
+        // Fallback bird drawing
+        console.log('Using fallback bird drawing, birdLoaded:', birdLoaded, 'complete:', birdImg.complete);
+        ctx.fillStyle = '#654321';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, bird.size/2, bird.size/3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+  }
+  
+  function drawRunwayNotification() {
+    if (!showRunwayNotification) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    ctx.save();
+    ctx.globalAlpha = 1.0; // Show at full opacity
+    
+    // Notification box
+    const boxWidth = 400;
+    const boxHeight = 80;
+    const boxX = (w - boxWidth) / 2;
+    const boxY = h * 0.2;
+    
+    ctx.fillStyle = 'rgba(0, 100, 0, 0.9)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    
+    // Notification text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('RUNWAY IN 100 METERS', boxX + boxWidth/2, boxY + 25);
+    ctx.fillText('GET READY FOR LANDING', boxX + boxWidth/2, boxY + 45);
+    
+    // Time counter - calculate elapsed time here
+    const currentTime = performance.now();
+    const birdPhaseElapsed = currentTime - birdPhaseStartTime;
+    const remainingTime = Math.max(0, 40 - Math.floor(birdPhaseElapsed / 1000));
+    ctx.fillStyle = '#ffff00';
+    ctx.font = '14px Arial, sans-serif';
+    ctx.fillText(`Time to runway: ${remainingTime}s`, boxX + boxWidth/2, boxY + 65);
+    
+    ctx.restore();
+  }
+  
+  function drawLandingNotification() {
+    if (!showLandingNotification) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    ctx.save();
+    ctx.globalAlpha = 1.0; // Show at full opacity
+    
+    // Notification box
+    const boxWidth = 300;
+    const boxHeight = 60;
+    const boxX = (w - boxWidth) / 2;
+    const boxY = h * 0.2;
+    
+    ctx.fillStyle = 'rgba(0, 150, 0, 0.9)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    
+    // Notification text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('YOU MAY LAND NOW', boxX + boxWidth/2, boxY + 25);
+    ctx.font = '14px Arial, sans-serif';
+    ctx.fillText('Ground is safe for landing', boxX + boxWidth/2, boxY + 45);
+    
+    ctx.restore();
+  }
+  
+  function drawLandingZone() {
+    if (!landingZoneActive) return;
+    
+    const landingZoneWidth = 200;
+    const landingZoneHeight = 30;
+    
+    ctx.save();
+    
+    // Landing strip on ground
+    ctx.fillStyle = '#666666';
+    ctx.fillRect(landingZoneX, world.groundY - landingZoneHeight, landingZoneWidth, landingZoneHeight);
+    
+    // Landing strip markings
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 4; i++) {
+      const markX = landingZoneX + 20 + i * 40;
+      ctx.fillRect(markX, world.groundY - landingZoneHeight + 10, 30, 4);
+      ctx.fillRect(markX, world.groundY - landingZoneHeight + 18, 30, 4);
+    }
+    
+    ctx.restore();
+  }
+  
+  function startHelicopterAudio() {
+    try {
+      const playPromise = heliLoopAudio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log('Helicopter audio started successfully');
+          })
+          .catch(e => {
+            console.log('Helicopter audio failed to start:', e);
+          });
+      }
+    } catch (e) {
+      console.log('Helicopter audio error:', e);
+    }
+  }
+  
+  function stopHelicopterAudio() {
+    try {
+      heliLoopAudio.pause();
+      heliLoopAudio.currentTime = 0;
+    } catch (e) {
+      console.log('Error stopping helicopter audio:', e);
+    }
+  }
+  
+  function drawLandingFade() {
+    if (!showLandingFade || landingFadeOpacity <= 0) return;
+    
+    ctx.save();
+    ctx.globalAlpha = landingFadeOpacity;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  // --- Update ---
+  function update(dt) {
+    const g = 900;        // gravity px/s^2
+    const thrust = -1400; // upward accel when W held
+    const maxVy = 1200;   // clamp
+
+    // Handle textbox fade-in even when paused
+    if (showTextbox && textboxOpacity < 1) {
+      textboxOpacity = Math.min(1, textboxOpacity + dt * 3); // Faster fade-in
+    }
+
+    // Don't update game physics when paused
+    if (gamePaused) return;
+
+    if (state === 'play') {
+      heli.vy += g * dt;
+      if (wHeld) heli.vy += thrust * dt;
+      heli.vy = Math.max(-maxVy, Math.min(maxVy, heli.vy));
+      heli.y += heli.vy * dt;
+    } else if (state === 'ready') {
+      // Idle bob near spawn height
+      heli.vy += g * dt;
+      heli.y += heli.vy * dt * 0.2;
+      const target = Math.floor(canvas.height * 0.4);
+      if (heli.y > target + 12) { heli.vy = -80; }
+      if (wHeld) { state = 'play'; }
+    }
+
+    // Ground collision -> lose (unless safe to land)
+    if (heli.y + heli.r * 0.6 >= world.groundY) {
+      if (safeToLand) {
+        if (state !== 'landed') {
+          landingTime = performance.now(); // Record landing time
+        }
+        state = 'landed'; // Safe landing
+        stopHelicopterAudio(); // Stop audio on landing
+      } else {
+        state = 'dead'; // Crash
+        stopHelicopterAudio(); // Stop audio on crash
+      }
+    }
+
+    // Prevent going off screen top
+    if (heli.y < heli.r * 0.6) {
+      heli.y = heli.r * 0.6;
+      if (heli.vy < 0) heli.vy = 0;
+    }
+    
+    // Track flight time and solar flare event
+    if (state === 'play') {
+      flightTime += dt;
+      
+      // Solar flare at 10 seconds
+      if (flightTime >= 10 && !solarFlareTriggered) {
+        solarFlareTriggered = true;
+        screenFlash = 1.0; // Trigger screen flash
+      }
+      
+      // Update flare effects
+      if (solarFlareTriggered) {
+        flareWaveProgress = Math.min(1, (flightTime - 10) / 3); // 3 second wave sweep
+        auroraIntensity = Math.min(0.8, (flightTime - 10) / 2); // Build aurora over 2 seconds
+        screenFlash = Math.max(0, screenFlash - dt * 3); // Flash fades over ~0.33 seconds
+        
+        // Show damage overlay and warnings after flare starts
+        if (flightTime >= 12 && !showDamageOverlay) {
+          showDamageOverlay = true;
+          showWarnings = true;
+          lastWarningTime = performance.now();
+        }
+        
+        // Build damage overlay intensity
+        if (showDamageOverlay && damageOverlayIntensity < 0.7 && !dialogueEnded) {
+          damageOverlayIntensity = Math.min(0.7, damageOverlayIntensity + dt * 0.5);
+        }
+        
+        // Fade out damage overlay after dialogue ends
+        if (dialogueEnded && damageOverlayIntensity > 0) {
+          damageOverlayIntensity = Math.max(0, damageOverlayIntensity - dt * 0.3);
+          if (damageOverlayIntensity <= 0) {
+            showDamageOverlay = false;
+            showWarnings = false;
+          }
+        }
+        
+        // Show textbox after aurora is fully developed (only if not dismissed)
+        if (flightTime >= 13 && !showTextbox && !textboxDismissed) {
+          showTextbox = true;
+          gamePaused = true; // Pause the game when textbox appears
+        }
+      }
+    }
+    
+    // Update birds
+    updateBirds(dt);
+    
+    // Handle screen fade after landing
+    if (state === 'landed' && landingTime > 0) {
+      const timeSinceLanding = performance.now() - landingTime;
+      
+      // Start fade after 3 seconds
+      if (timeSinceLanding >= 3000) {
+        showLandingFade = true;
+        landingFadeOpacity = Math.min(1, (timeSinceLanding - 3000) / 2000); // 2 second fade
+      }
+    }
+  }
+
+  // --- Overlay (death or landing) ---
+  function drawOverlay() {
+    if (state === 'dead') {
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#e6f0ff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 40px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+      ctx.fillText('You fell', canvas.width / 2, canvas.height * 0.45);
+      ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+      ctx.fillText('Press R to restart', canvas.width / 2, canvas.height * 0.52);
+    } else if (state === 'landed') {
+      ctx.fillStyle = 'rgba(0,100,0,0.45)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 40px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+      ctx.fillText('SUCCESSFUL LANDING!', canvas.width / 2, canvas.height * 0.45);
+      ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+      ctx.fillText('You survived the solar flare effects!', canvas.width / 2, canvas.height * 0.52);
+      ctx.fillText('Press R to restart', canvas.width / 2, canvas.height * 0.58);
+    }
+  }
+
+  // --- Fade system ---
+  function updateFade(currentTime) {
+    const elapsed = currentTime - fadeStartTime;
+    if (elapsed < fadeDuration) {
+      fadeOpacity = 1.0 - (elapsed / fadeDuration);
+    } else {
+      fadeOpacity = 0;
+      
+      // Show instructions after fade completes
+      if (!showInstructions && state === 'ready') {
+        showInstructions = true;
+        instructionStartTime = currentTime;
+      }
+    }
+    
+    // Handle instruction fade-out when game starts
+    if (state === 'play') {
+      // Fade out instructions when game starts
+      instructionOpacity = Math.max(0, instructionOpacity - 0.05);
+      if (instructionOpacity <= 0) {
+        showInstructions = false;
+        showInstructionBox = false;
+      }
+    }
+  }
+
+  function drawFade() {
+    if (fadeOpacity > 0) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${fadeOpacity})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+
+  // --- Main loop ---
+  function loop(t) {
+    const dt = Math.min(0.033, (t - last) / 1000);
+    last = t;
+    world.t += dt;
+
+    updateFade(t);
+    update(dt);
+    drawBackground(dt);
+    drawSolarFlareEffects(); // Draw flare effects over background
+    drawHeli();
+    drawBirds(); // Draw birds for evasion mechanic
+    drawEducationalTextbox(); // Draw educational content
+    drawInstructionTextbox(); // Draw initial instructions
+    drawDialogue(); // Draw character dialogue
+    drawDamageOverlay(); // Draw red damage overlay
+    drawWarnings(); // Draw kernel panic warnings
+    drawRunwayNotification(); // Draw runway approach notification
+    drawLandingNotification(); // Draw landing clearance notification
+    drawOverlay();
+    drawScreenFlash(); // Draw screen flash
+    drawLandingFade(); // Draw landing fade
+    drawFade(); // Draw fade overlay last
+
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  </script>
+</body>
+</html>

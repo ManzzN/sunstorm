@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Error - NASA Solar Storm Games</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+            color: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .error-container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            border: 1px solid #333;
+        }
+        h1 {
+            font-size: 4rem;
+            color: #ff6b6b;
+            margin: 0;
+        }
+        h2 {
+            color: #ffa726;
+            margin: 20px 0;
+        }
+        p {
+            font-size: 1.2rem;
+            margin: 20px 0;
+        }
+        .home-link {
+            display: inline-block;
+            background: #2196f3;
+            color: white;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+        .home-link:hover {
+            background: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <h1>500</h1>
+        <h2>⚡ Solar Flare Detected</h2>
+        <p>Our systems are experiencing interference from a massive solar storm!</p>
+        <p>The engineering team is working to restore operations.</p>
+        <a href="{{ url_for('index') }}" class="home-link">Return to Mission Control</a>
+    </div>
+</body>
+</html>
