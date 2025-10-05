@@ -258,7 +258,7 @@
   let dialogueCharIndex = 0;
   let dialogueLastCharTime = 0;
   const dialogueLines = [
-    { speaker: 'Pilot', text: 'What the hell… the panel\'s flickering. I\'ve lost part of the navigation.' },
+    { speaker: 'Pilot', text: 'What now… the panel\'s flickering. I\'ve lost part of the navigation.' },
     { speaker: 'Co-pilot', text: 'Confirmed, the system\'s unstable. Checking backup power.' },
     { speaker: 'Pilot', text: 'Radar\'s jumping, comms are full of static… looks like we\'re starting to lose electronics.' }
   ];
@@ -1543,7 +1543,7 @@
       ctx.font = 'bold 40px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
       ctx.fillText('You fell', canvas.width / 2, canvas.height * 0.45);
       ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
-      ctx.fillText('Press R to restart', canvas.width / 2, canvas.height * 0.52);
+      ctx.fillText('', canvas.width / 2, canvas.height * 0.52);
     } else if (state === 'landed') {
       // No green overlay - show text directly over the scene
       ctx.fillStyle = '#ffffff';
