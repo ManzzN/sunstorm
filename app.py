@@ -24,6 +24,12 @@ def helicopter_game():
     """Helicopter emergency landing game"""
     return render_template('heli.html')
 
+@app.route('/ending')
+@app.route('/ending.html')
+def ending_scene():
+    """Ending scene with art and motivational quote"""
+    return render_template('ending.html')
+
 @app.route('/static/<path:filename>')
 def static_files(filename):
     """Serve static files (resources, audio, images)"""
@@ -58,6 +64,7 @@ if __name__ == '__main__':
     print('  / or /index.html - Solar Flare Escape')
     print('  /iss or /iss.html - ISS Magnetosphere Run') 
     print('  /heli or /heli.html - Helicopter Landing')
+    print('  /ending or /ending.html - Ending Scene')
     
     # Run Flask development server
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=80)
