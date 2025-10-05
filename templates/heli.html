@@ -1524,6 +1524,11 @@
       if (timeSinceLanding >= 3000) {
         showLandingFade = true;
         landingFadeOpacity = Math.min(1, (timeSinceLanding - 3000) / 2000); // 2 second fade
+        
+        // Redirect to ending page when fade is complete
+        if (landingFadeOpacity >= 1.0 && timeSinceLanding >= 6000) { // 3s delay + 2s fade + 1s buffer
+          window.location.href = 'ending.html';
+        }
       }
     }
   }
