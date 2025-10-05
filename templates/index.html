@@ -133,7 +133,7 @@
     button:hover { filter: brightness(1.12); transform: translateY(-1px); }
 
     /* --- Screen flash on fail ------------------------------------------ */
-    .flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 60%, rgba(255,0,0,0.33), rgba(255,0,0,0.0) 60%); animation: flash 320ms ease-out forwards; }
+    .flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(255,0,0,0.33) 0%, rgba(255,0,0,0.15) 50%, rgba(255,0,0,0.0) 100%); animation: flash 320ms ease-out forwards; }
     @keyframes flash { from { opacity: 1; } to { opacity: 0; } }
 
     /* --- Kid-friendly edu box ------------------------------------------ */

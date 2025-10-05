@@ -80,7 +80,7 @@
   // Set audio sources and properties
   dialogueAudio.line1.src = '/static/resources/1.ogg';
   dialogueAudio.line2.src = '/static/resources/confirmed.mp3';
-  dialogueAudio.line3.src = '/static/resources/2.ogg';
+  dialogueAudio.line3.src = '/static/resources/yasmin3.ogg';
   
   // --- Bird sprite loading ---
   const birdImg = new Image();
@@ -101,6 +101,20 @@
   heliLoopAudio.volume = 0.25; // Quieter helicopter sound
   heliLoopAudio.preload = 'auto';
   let heliAudioInitialized = false;
+  
+  // --- Explosion audio for solar flare ---
+  const explosionAudio = new Audio('/static/resources/explosion.mp3');
+  explosionAudio.volume = 0.8;
+  explosionAudio.preload = 'auto';
+  
+  // --- Bird dialogue audio ---
+  const birdFlockAudio = new Audio('/static/resources/iseeaflock.mp3');
+  birdFlockAudio.volume = 0.8;
+  birdFlockAudio.preload = 'auto';
+  
+  const birdSeeThemAudio = new Audio('/static/resources/nowayiseethem.mp3');
+  birdSeeThemAudio.volume = 0.8;
+  birdSeeThemAudio.preload = 'auto';
   
   // Configure audio
   Object.values(dialogueAudio).forEach(audio => {
@@ -146,6 +160,16 @@
       
       e.preventDefault();
     }
+    
+    if ((k === 'enter' || k === ' ') && showBirdObjective && birdObjectivePaused) {
+      // Close bird objective textbox and resume game
+      showBirdObjective = false;
+      birdObjectivePaused = false;
+      birdObjectiveOpacity = 0;
+      birdObjectiveDismissed = true;
+      
+      e.preventDefault();
+    }
     if ((k === 'enter' || k === ' ') && showDialogue && currentDialogueLine < dialogueLines.length) {
       // Advance to next dialogue line
       if (dialogueCharIndex >= dialogueLines[currentDialogueLine].text.length) {
@@ -155,7 +179,14 @@
         dialogueLastCharTime = 0;
         
         // Play audio for new dialogue line
-        if (currentDialogueLine < dialogueLines.length) {
+        if (birdDialogueActive && currentDialogueLine < birdDialogueQueue.length) {
+          // Play bird dialogue audio if in bird dialogue mode
+          if (currentDialogueLine === 1) { // "Oh, I see them!" line
+            birdSeeThemAudio.currentTime = 0;
+            birdSeeThemAudio.play().catch(e => console.log('Bird see them audio play failed:', e));
+          }
+        } else if (currentDialogueLine < dialogueLines.length) {
+          // Play regular dialogue audio only if not in bird dialogue mode
           playDialogueAudio(currentDialogueLine);
         }
         
@@ -169,6 +200,12 @@
           birdPhaseStartTime = performance.now();
           startX = heli.x; // Record starting position for distance tracking
           nextBirdSpawn = performance.now() + 1500; // First bird in 1.5 seconds
+          
+          // Show bird objective textbox when bird phase starts
+          if (!birdObjectiveDismissed) {
+            showBirdObjective = true;
+            birdObjectivePaused = true;
+          }
         }
       } else {
         // Complete current line instantly
@@ -208,6 +245,10 @@
   let textboxOpacity = 0;
   let gamePaused = false;
   let textboxDismissed = false;
+  let showBirdObjective = false;
+  let birdObjectiveOpacity = 0;
+  let birdObjectivePaused = false;
+  let birdObjectiveDismissed = false;
   
   // --- Dialogue System ---
   let showDialogue = false;
@@ -247,15 +288,17 @@
   // Bird dialogue system
   let birdDialogueQueue = [
     { speaker: "Co-pilot", text: "I see a flock ahead!" },
-    { speaker: "Pilot", text: "Oh, I see them! We need to change position." },
-    { speaker: "Co-pilot", text: "Easy, don't lose altitude — they're coming straight at us!" },
-    { speaker: "Pilot", text: "That was close." }
+    { speaker: "Pilot", text: "Oh, I see them! We need to change position." }
   ];
   let currentBirdDialogue = 0;
   let birdDialogueActive = false;
   let birdDialogueStarted = false;
   let birdEventsActive = false;
   let birdPhaseStartTime = 0;
+  let staticEffectActive = false;
+  let staticEffectStartTime = 0;
+  let flashEffectActive = false;
+  let flashEffectStartTime = 0;
   let showRunwayNotification = false;
   let runwayNotificationOpacity = 0;
   let landingZoneActive = false;
@@ -300,6 +343,12 @@
     dialogueLastCharTime = 0;
     dialogueStartTime = 0;
     
+    // Reset bird objective textbox
+    showBirdObjective = false;
+    birdObjectiveOpacity = 0;
+    birdObjectivePaused = false;
+    birdObjectiveDismissed = false;
+    
     // Reset damage overlay and warnings
     showDamageOverlay = false;
     damageOverlayIntensity = 0;
@@ -317,6 +366,18 @@
     birdDialogueActive = false;
     currentBirdDialogue = 0;
     birdDialogueStarted = false;
+    
+    // Reset bird objective textbox
+    showBirdObjective = false;
+    birdObjectiveOpacity = 0;
+    birdObjectivePaused = false;
+    birdObjectiveDismissed = false;
+    
+    // Reset static effect system
+    staticEffectActive = false;
+    staticEffectStartTime = 0;
+    flashEffectActive = false;
+    flashEffectStartTime = 0;
     showRunwayNotification = false;
     runwayNotificationOpacity = 0;
     landingZoneActive = false;
@@ -359,10 +420,12 @@
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
-    // Parallax parameters
-    world.cloudsOffset = (world.cloudsOffset + 40 * dt) % w;   // far
-    world.hillsOffset  = (world.hillsOffset  + 80 * dt) % w;   // mid
-    world.nearOffset   = (world.nearOffset   + 140 * dt) % 120; // near ground stripes
+    // Parallax parameters - stop movement after successful landing
+    if (state !== 'landed') {
+      world.cloudsOffset = (world.cloudsOffset + 40 * dt) % w;   // far
+      world.hillsOffset  = (world.hillsOffset  + 80 * dt) % w;   // mid
+      world.nearOffset   = (world.nearOffset   + 140 * dt) % 120; // near ground stripes
+    }
 
     // Clouds layer
     ctx.globalAlpha = 0.35;
@@ -620,11 +683,57 @@
     ctx.textAlign = 'center';
     ctx.fillText('OK', buttonX + buttonWidth/2, buttonY + buttonHeight/2 + 4);
     
-    // Instructions
+    // Instructions - positioned in left corner
     ctx.fillStyle = '#aaaaaa';
-    ctx.font = '10px Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Press ENTER or SPACE to continue', boxX + boxWidth/2, boxY + boxHeight - 3);
+    ctx.font = '12px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Press SPACE to skip dialog', boxX + 10, boxY + boxHeight - 8);
+    
+    ctx.restore();
+  }
+  
+  function drawBirdObjectiveTextbox() {
+    if (!showBirdObjective || birdObjectiveOpacity <= 0) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    const boxWidth = 450;
+    const boxHeight = 120;
+    const boxX = (w - boxWidth) / 2;
+    const boxY = h * 0.25;
+    
+    ctx.save();
+    ctx.globalAlpha = birdObjectiveOpacity;
+    
+    // Simple filled rectangle background - no borders or strokes
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    
+    // Title
+    ctx.fillStyle = '#ffaa00';
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    const titleText = 'OBJECTIVE: AVOID THE BIRDSTRIKE AND LAND SAFELY';
+    ctx.fillText(titleText, boxX + 20, boxY + 35);
+    
+    // Educational text
+    ctx.fillStyle = '#cccccc';
+    ctx.font = '12px Arial, sans-serif';
+    const textLines = [
+      'Birds have been detected in your flight path!',
+      'Use W to maneuver altitude and avoid collision.',
+      'Wait for the "RUNWAY CLEAR" signal before landing.'
+    ];
+    
+    for (let i = 0; i < textLines.length; i++) {
+      ctx.fillText(textLines[i], boxX + 20, boxY + 60 + i * 16);
+    }
+    
+    // Instructions - positioned in left corner
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font = '12px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Press SPACE to continue', boxX + 10, boxY + boxHeight - 8);
     
     ctx.restore();
   }
@@ -734,13 +843,13 @@
     
     // Speaker name
     ctx.fillStyle = '#ffaa00';
-    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.font = 'bold 20px Arial, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(currentLine.speaker + ':', boxX + 20, boxY + 30);
     
     // Dialogue text with word wrapping
     ctx.fillStyle = '#ffffff';
-    ctx.font = '14px Arial, sans-serif';
+    ctx.font = '18px Arial, sans-serif';
     const maxWidth = boxWidth - 40;
     const words = dialogueTypewriterText.split(' ');
     let line = '';
@@ -759,16 +868,16 @@
     }
     ctx.fillText(line, boxX + 20, y);
     
-    // Show continue indicator when line is complete
+    // Show continue indicator when line is complete - positioned in left corner
     if (dialogueCharIndex >= currentLine.text.length) {
       ctx.fillStyle = '#aaaaaa';
       ctx.font = '12px Arial, sans-serif';
-      ctx.textAlign = 'right';
+      ctx.textAlign = 'left';
       let maxDialogueLines = birdDialogueActive ? birdDialogueQueue.length : dialogueLines.length;
       if (currentDialogueLine < maxDialogueLines - 1) {
-        ctx.fillText('Press ENTER or SPACE to continue', boxX + boxWidth - 20, boxY + boxHeight - 10);
+        ctx.fillText('Press SPACE to continue', boxX + 10, boxY + boxHeight - 8);
       } else {
-        ctx.fillText('Press ENTER or SPACE to close', boxX + boxWidth - 20, boxY + boxHeight - 10);
+        ctx.fillText('Press SPACE to close', boxX + 10, boxY + boxHeight - 8);
       }
     }
     
@@ -842,6 +951,92 @@
     ctx.font = 'bold 12px monospace';
     ctx.fillText('SYS ERR [0x7F4A2B1C]', w - 20, 50);
     ctx.fillText('PWR FLUCTUATION DETECTED', w - 20, 70);
+    
+    ctx.restore();
+  }
+  
+  function drawStaticFlash() {
+    if (!flashEffectActive) return;
+    
+    const currentTime = performance.now();
+    const flashDuration = 200; // Flash lasts 200ms
+    const elapsed = currentTime - flashEffectStartTime;
+    
+    if (elapsed > flashDuration) {
+      flashEffectActive = false;
+      return;
+    }
+    
+    // Red flash overlay
+    const opacity = 1 - (elapsed / flashDuration);
+    ctx.save();
+    ctx.globalAlpha = opacity * 0.6;
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+  
+  function drawStaticEffect() {
+    if (!staticEffectActive) return;
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    const currentTime = performance.now();
+    const staticDuration = 500; // Static lasts 0.5 seconds for regular effects
+    const elapsed = currentTime - staticEffectStartTime;
+    
+    // Only auto-disable if not in game over state (dead)
+    if (elapsed > staticDuration && state !== 'dead') {
+      staticEffectActive = false;
+      return;
+    }
+    
+    // Create glitchy static pattern
+    ctx.save();
+    
+    // Base static noise - much more opaque
+    let intensity;
+    if (state === 'dead') {
+      // Permanent full intensity for game over
+      intensity = 1.0;
+    } else {
+      // Normal fade out for regular static effects
+      intensity = 1 - (elapsed / staticDuration * 0.2);
+    }
+    ctx.globalAlpha = intensity * 0.8; // Much more opaque
+    
+    // Random noise pattern
+    const imageData = ctx.createImageData(w, h);
+    const data = imageData.data;
+    
+    for (let i = 0; i < data.length; i += 4) {
+      const noise = Math.random();
+      const value = noise < 0.3 ? 0 : (noise < 0.6 ? 128 : 255);
+      data[i] = value;     // Red
+      data[i + 1] = value; // Green  
+      data[i + 2] = value; // Blue
+      data[i + 3] = intensity * 100; // Alpha
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+    
+    // Add scanlines effect
+    ctx.globalAlpha = intensity * 0.4; // More opaque scanlines
+    ctx.fillStyle = '#000000';
+    for (let y = 0; y < h; y += 4) {
+      ctx.fillRect(0, y, w, 2);
+    }
+    
+    // Add random horizontal glitch bars
+    ctx.globalAlpha = intensity * 0.9; // More opaque glitch bars
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 5; i++) {
+      if (Math.random() < 0.3) {
+        const y = Math.random() * h;
+        const height = Math.random() * 8 + 2;
+        ctx.fillRect(0, y, w, height);
+      }
+    }
     
     ctx.restore();
   }
@@ -932,14 +1127,36 @@
       // Calculate distance traveled
       distanceTraveled = Math.abs(heli.x - startX);
       
-      // Show runway notification after 30 seconds
-      if (birdPhaseElapsed >= 30000 && !showRunwayNotification) {
-        showRunwayNotification = true;
+      // Show runway notification after 30 seconds (moved outside birdEventsActive check)
+      if (birdPhaseStartTime > 0) {
+        const phaseElapsed = currentTime - birdPhaseStartTime;
+        if (phaseElapsed >= 30000 && !showRunwayNotification) {
+          showRunwayNotification = true;
+          console.log('Runway notification activated at', phaseElapsed);
+        }
+        
+        // Hide runway notification after 35 seconds
+        if (phaseElapsed >= 35000 && showRunwayNotification) {
+          showRunwayNotification = false;
+        }
       }
       
-      // Hide runway notification after 35 seconds
-      if (birdPhaseElapsed >= 35000 && showRunwayNotification) {
-        showRunwayNotification = false;
+      // Trigger static effect every 10 seconds during bird phase
+      if (birdEventsActive && Math.floor(birdPhaseElapsed / 10000) > Math.floor((birdPhaseElapsed - 50) / 10000)) {
+        // Flash effect first
+        flashEffectActive = true;
+        flashEffectStartTime = currentTime;
+        
+        // Static effect starts right after flash
+        setTimeout(() => {
+          staticEffectActive = true;
+          staticEffectStartTime = performance.now();
+        }, 200); // Brief delay after flash
+        
+        // End static effect after 0.5 seconds
+        setTimeout(() => {
+          staticEffectActive = false;
+        }, 700); // 200ms flash + 500ms static
       }
       
       // Stop spawning birds after 40 seconds and activate safe landing
@@ -969,6 +1186,10 @@
             dialogueTypewriterText = '';
             dialogueLastCharTime = 0;
             dialogueOpacity = 0;
+            
+            // Play "I see a flock" audio
+            birdFlockAudio.currentTime = 0;
+            birdFlockAudio.play().catch(e => console.log('Bird flock audio play failed:', e));
           }, 5000); // 5 second delay
         }
         
@@ -1008,9 +1229,20 @@
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance < (bird.size/2 + heli.r) && state === 'play') {
-        // Bird collision - game over
+        // Bird collision - game over with static effect
         state = 'dead';
         bird.alive = false;
+        
+        // Trigger permanent game over static effect
+        flashEffectActive = true;
+        flashEffectStartTime = performance.now();
+        
+        setTimeout(() => {
+          staticEffectActive = true;
+          staticEffectStartTime = performance.now();
+        }, 200);
+        
+        // Static stays on permanently after game over (no auto-stop)
       }
     }
     
@@ -1178,9 +1410,14 @@
     if (showTextbox && textboxOpacity < 1) {
       textboxOpacity = Math.min(1, textboxOpacity + dt * 3); // Faster fade-in
     }
+    
+    // Handle bird objective textbox fade-in even when paused
+    if (showBirdObjective && birdObjectiveOpacity < 1) {
+      birdObjectiveOpacity = Math.min(1, birdObjectiveOpacity + dt * 3); // Faster fade-in
+    }
 
     // Don't update game physics when paused
-    if (gamePaused) return;
+    if (gamePaused || birdObjectivePaused) return;
 
     if (state === 'play') {
       heli.vy += g * dt;
@@ -1207,6 +1444,17 @@
       } else {
         state = 'dead'; // Crash
         stopHelicopterAudio(); // Stop audio on crash
+        
+        // Trigger permanent game over static effect for ground crash
+        flashEffectActive = true;
+        flashEffectStartTime = performance.now();
+        
+        setTimeout(() => {
+          staticEffectActive = true;
+          staticEffectStartTime = performance.now();
+        }, 200);
+        
+        // Static stays on permanently after game over (no auto-stop)
       }
     }
 
@@ -1224,6 +1472,10 @@
       if (flightTime >= 10 && !solarFlareTriggered) {
         solarFlareTriggered = true;
         screenFlash = 1.0; // Trigger screen flash
+        
+        // Play explosion sound effect
+        explosionAudio.currentTime = 0; // Reset to beginning
+        explosionAudio.play().catch(e => console.log('Explosion audio play failed:', e));
       }
       
       // Update flare effects
@@ -1288,14 +1540,18 @@
       ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
       ctx.fillText('Press R to restart', canvas.width / 2, canvas.height * 0.52);
     } else if (state === 'landed') {
-      ctx.fillStyle = 'rgba(0,100,0,0.45)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // No green overlay - show text directly over the scene
       ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
       ctx.textAlign = 'center';
       ctx.font = 'bold 40px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+      ctx.strokeText('SUCCESSFUL LANDING!', canvas.width / 2, canvas.height * 0.45);
       ctx.fillText('SUCCESSFUL LANDING!', canvas.width / 2, canvas.height * 0.45);
       ctx.font = '18px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+      ctx.strokeText('You survived the solar flare effects!', canvas.width / 2, canvas.height * 0.52);
       ctx.fillText('You survived the solar flare effects!', canvas.width / 2, canvas.height * 0.52);
+      ctx.strokeText('Press R to restart', canvas.width / 2, canvas.height * 0.58);
       ctx.fillText('Press R to restart', canvas.width / 2, canvas.height * 0.58);
     }
   }
@@ -1346,14 +1602,17 @@
     drawHeli();
     drawBirds(); // Draw birds for evasion mechanic
     drawEducationalTextbox(); // Draw educational content
+    drawBirdObjectiveTextbox(); // Draw bird objective notification
     drawInstructionTextbox(); // Draw initial instructions
     drawDialogue(); // Draw character dialogue
     drawDamageOverlay(); // Draw red damage overlay
     drawWarnings(); // Draw kernel panic warnings
     drawRunwayNotification(); // Draw runway approach notification
     drawLandingNotification(); // Draw landing clearance notification
+    drawStaticEffect(); // Draw static glitch effect (obscures birds)
     drawOverlay();
     drawScreenFlash(); // Draw screen flash
+    drawStaticFlash(); // Draw static flash effect
     drawLandingFade(); // Draw landing fade
     drawFade(); // Draw fade overlay last
 
